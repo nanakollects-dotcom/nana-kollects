@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Nana Kollects Business Tracker</title>
+    <link rel="stylesheet" href="./styles.css?v=supabase-auth-20260607" />
+  </head>
+
+  <body>
+    <section class="auth-screen" id="auth-screen">
+      <div class="auth-card">
+        <div class="auth-brand-mark">NK</div>
+        <h1>Nana Kollects</h1>
+        <p>Business Tracker</p>
+
+        <form id="auth-form">
+          <label>Email<input id="auth-email" type="email" placeholder="you@example.com" required /></label>
+          <label>Password<input id="auth-password" type="password" placeholder="Your password" required /></label>
+
+          <div id="auth-message" class="auth-message" role="status" aria-live="polite"></div>
+
+          <button class="primary-btn auth-submit" type="submit">Sign In</button>
+          <button class="icon-btn auth-secondary" type="button" id="signup-btn">Create Account</button>
+        </form>
+      </div>
+    </section>
+
+    <div id="app-shell-wrapper" hidden>
+      <header class="mobile-header">
+        <div>
+          <strong>Nana Kollects</strong>
+          <span>Business Tracker</span>
+        </div>
+        <button class="menu-btn" id="menu-toggle" type="button" aria-label="Menu">
+          <span aria-hidden="true"></span>
+        </button>
+      </header>
+
+      <div class="nav-overlay" id="nav-overlay"></div>
+
+      <div class="app-shell">
+        <aside class="sidebar" aria-label="Main navigation">
+          <div class="brand">
+            <strong>Nana Kollects</strong>
+            <span>Business Tracker</span>
+          </div>
+
+          <nav class="nav" id="nav"></nav>
+
+          <button class="signout-btn" id="signout-btn" type="button">
+            Sign Out
+          </button>
+        </aside>
+
+        <main class="main">
+          <header class="topbar">
+            <label class="filter-control">
+              <span>Period</span>
+              <select id="time-filter">
+                <option value="today">Today</option>
+                <option value="yesterday">Yesterday</option>
+                <option value="week">This Week</option>
+                <option value="last-week">Last Week</option>
+                <option value="month" selected>This Month</option>
+                <option value="last-month">Last Month</option>
+                <option value="last-30-days">Last 30 Days</option>
+                <option value="year">This Year</option>
+                <option value="all">All Time</option>
+                <option value="custom">Custom Range</option>
+              </select>
+            </label>
+
+            <div class="custom-range" id="custom-range" hidden>
+              <label>
+                <span>Start</span>
+                <input type="date" id="custom-start" />
+              </label>
+
+              <label>
+                <span>End</span>
+                <input type="date" id="custom-end" />
+              </label>
+            </div>
+
+            <div class="page-action-slot" id="page-action-slot"></div>
+          </header>
+
+          <section id="app-view" class="view" aria-live="polite"></section>
+        </main>
+      </div>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <script type="module" src="./src/app.js?v=supabase-auth-20260607"></script>
+  </body>
+</html>

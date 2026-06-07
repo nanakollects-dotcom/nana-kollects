@@ -1,0 +1,575 @@
+import { getInventoryAgeDays, getInventoryMarginPercent, getInventoryProfitPotential } from "../core/calculations.js";
+import {
+  addSupabaseInventoryItem,
+  removeSupabaseInventoryItem,
+  saveSupabaseInventoryItem,
+  setSupabaseInventoryStatus,
+  PAYMENT_STATUSES,
+  PLATFORMS,
+  STATUSES,
+} from "../services/repository.js";
+import { bindForm, emptyState, modal, pageHeader } from "../components/ui.js";
+import { formatMoney } from "../components/format.js";
+
+let editingId = null;
+let isModalOpen = false;
+let searchTerm = "";
+let statusFilter = "all";
+let collectionFilter = "all";
+let ageFilter = "all";
+
+const escapeText = (value) =>
+  String(value ?? "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#039;",
+  })[char]);
+
+const collectionOptions = (store) =>
+  [
+    ...new Set([
+      ...(store.collections || []).map((collection) => collection.name),
+      ...store.inventory.map((item) => item.collectionId).filter(Boolean),
+    ]),
+  ].sort();
+
+const statusClass = (status) => {
+  if (status === STATUSES.AVAILABLE) return "green-pill";
+  if (status === STATUSES.RESERVED) return "yellow-pill";
+  if (status === STATUSES.SOLD) return "purple-pill";
+  if (status === STATUSES.ARCHIVED) return "gray-pill";
+  return "muted-pill";
+};
+
+const formatAge = (item) => {
+  const days = getInventoryAgeDays(item);
+  if (days < 1) return "New";
+  return `${days} ${days === 1 ? "day" : "days"}`;
+};
+
+const ageClass = (item) => getInventoryAgeDays(item) >= 30 ? "warning-action" : "";
+
+const matchesAgeFilter = (item) => {
+  const days = getInventoryAgeDays(item);
+
+  if (ageFilter === "new") return days < 30;
+  if (ageFilter === "30") return days >= 30;
+  if (ageFilter === "60") return days >= 60;
+  if (ageFilter === "90") return days >= 90;
+  return true;
+};
+
+const toDateInput = (value) => {
+  const date = value ? new Date(value) : new Date();
+  return Number.isNaN(date.getTime()) ? new Date().toISOString().slice(0, 10) : date.toISOString().slice(0, 10);
+};
+
+const canRunStatusAction = (current, next) => {
+  if (current === next) return false;
+  if (current === STATUSES.AVAILABLE) return [STATUSES.RESERVED, STATUSES.SOLD, STATUSES.WRITTEN_OFF, STATUSES.ARCHIVED].includes(next);
+  if (current === STATUSES.RESERVED) return [STATUSES.AVAILABLE, STATUSES.SOLD, STATUSES.WRITTEN_OFF, STATUSES.ARCHIVED].includes(next);
+  if (current === STATUSES.SOLD) return [STATUSES.AVAILABLE, STATUSES.ARCHIVED].includes(next);
+  if (current === STATUSES.WRITTEN_OFF) return [STATUSES.AVAILABLE, STATUSES.ARCHIVED].includes(next);
+  if (current === STATUSES.ARCHIVED) return [STATUSES.AVAILABLE, STATUSES.RESERVED].includes(next);
+  return false;
+};
+
+const actionDisabled = (current, next) => canRunStatusAction(current, next) ? "" : "disabled";
+
+export function setInventoryCollectionFilter(collectionName) {
+  collectionFilter = collectionName || "all";
+  searchTerm = "";
+  statusFilter = "all";
+  ageFilter = "all";
+}
+
+export function setInventoryViewItem(itemId) {
+  editingId = itemId || null;
+  isModalOpen = Boolean(itemId);
+}
+
+function inventoryForm(store) {
+  const editingItem = store.inventory.find((item) => item.id === editingId);
+  const locked = Boolean(editingItem?.locked);
+  const title = editingItem ? "Edit Item" : "Add Item";
+  const collections = collectionOptions(store);
+  const canSubmit = !locked && collections.length > 0;
+  const itemStatus = editingItem?.status || STATUSES.AVAILABLE;
+
+  return `
+    ${modal(
+      title,
+      `
+        <form class="form-panel modal-form" id="inventory-form">
+          <div class="modal-header">
+            <h2>${title}</h2>
+            <button class="icon-btn" type="button" data-close-modal="inventory">Close</button>
+          </div>
+
+          <input type="hidden" name="id" value="${editingId || ""}" />
+
+          <section class="modal-section">
+            <h3>Basic Information</h3>
+          ${
+  editingItem
+    ? `
+      <label>
+        SKU
+        <input name="sku" required ${locked ? "disabled" : ""} />
+      </label>
+    `
+    : `
+      <div class="modal-copy">
+        SKU will be auto-generated when saved.
+      </div>
+    `
+}
+
+          <label>
+            Name
+            <input name="name" required ${locked ? "disabled" : ""} />
+          </label>
+
+          <label>
+            Collection
+            <select name="collectionId" required ${locked || !collections.length ? "disabled" : ""}>
+              <option value="">Choose collection</option>
+              ${collections
+                .map((name) => `<option value="${escapeText(name)}">${escapeText(name)}</option>`)
+                .join("")}
+            </select>
+          </label>
+
+          ${
+            collections.length
+              ? ""
+              : `<p class="modal-copy">Create a collection first before adding inventory.</p>`
+          }
+          </section>
+
+          <section class="modal-section">
+            <h3>Financial Information</h3>
+            <div class="form-row">
+              <label>
+                Cost
+                <input type="number" name="cost" min="0" step="0.01" required ${locked ? "disabled" : ""} />
+              </label>
+
+              <label>
+                Price
+                <input type="number" name="price" min="0" step="0.01" required ${locked ? "disabled" : ""} />
+              </label>
+            </div>
+
+            <div class="read-only-metric">
+              <span>Profit Potential</span>
+              <strong>${formatMoney(editingItem ? getInventoryProfitPotential(editingItem) : 0)}</strong>
+            </div>
+          </section>
+
+          <section class="modal-section">
+            <h3>Inventory Information</h3>
+          <label>
+            Status
+            <select name="status" ${locked ? "disabled" : ""}>
+              <option>${STATUSES.AVAILABLE}</option>
+              <option>${STATUSES.RESERVED}</option>
+              <option ${itemStatus === STATUSES.SOLD ? "" : "disabled"}>${STATUSES.SOLD}</option>
+              <option ${itemStatus === STATUSES.WRITTEN_OFF ? "" : "disabled"}>${STATUSES.WRITTEN_OFF}</option>
+              <option ${itemStatus === STATUSES.ARCHIVED ? "" : "disabled"}>${STATUSES.ARCHIVED}</option>
+            </select>
+          </label>
+
+            <label>
+              Date Added
+              <input type="date" name="createdAt" required ${locked ? "disabled" : ""} />
+            </label>
+
+            <label>
+              Notes
+              <textarea name="notes" rows="3" ${locked ? "disabled" : ""} placeholder="Optional item notes"></textarea>
+            </label>
+          </section>
+
+          ${
+            editingItem
+              ? `
+                <section class="modal-section inventory-action-panel">
+                  <h3>Inventory Actions</h3>
+                  <p class="modal-copy">Use these actions to manage sale state, archive, write off, or delete this item.</p>
+
+                  <div class="form-row">
+                    <label>
+                      Sold Platform
+                      <select id="inventory-action-platform">
+                        <option value="">Choose platform</option>
+                        ${PLATFORMS.map((platform) => `<option>${platform}</option>`).join("")}
+                      </select>
+                    </label>
+
+                    <label>
+                      Payment
+                      <select id="inventory-action-payment">
+                        <option>${PAYMENT_STATUSES.PAID}</option>
+                        <option>${PAYMENT_STATUSES.PENDING}</option>
+                      </select>
+                    </label>
+                  </div>
+
+                  <div class="inventory-action-grid">
+                    <button class="table-action" type="button" data-status-action="${STATUSES.AVAILABLE}" data-item-id="${editingItem.id}" ${actionDisabled(itemStatus, STATUSES.AVAILABLE)}>Mark Available</button>
+                    <button class="table-action primary-action" type="button" data-status-action="${STATUSES.SOLD}" data-item-id="${editingItem.id}" ${actionDisabled(itemStatus, STATUSES.SOLD)}>Mark Sold</button>
+                    <button class="table-action" type="button" data-status-action="${STATUSES.RESERVED}" data-item-id="${editingItem.id}" ${actionDisabled(itemStatus, STATUSES.RESERVED)}>Mark Reserved</button>
+                    <button class="table-action warning-action" type="button" data-status-action="${STATUSES.WRITTEN_OFF}" data-item-id="${editingItem.id}" ${actionDisabled(itemStatus, STATUSES.WRITTEN_OFF)}>Mark Written Off</button>
+                    <button class="table-action" type="button" data-status-action="${STATUSES.ARCHIVED}" data-item-id="${editingItem.id}" ${actionDisabled(itemStatus, STATUSES.ARCHIVED)}>Archive Item</button>
+                    <button class="table-action danger" type="button" data-delete="${editingItem.id}">Delete Item</button>
+                  </div>
+                </section>
+              `
+              : ""
+          }
+
+          <div class="button-row">
+            ${
+              canSubmit
+                ? `<button class="primary-btn" type="submit" data-saving-text="${editingId ? "Updating..." : "Adding..."}">${editingId ? "Save Item" : "Add Item"}</button>`
+                : ""
+            }
+
+            <button class="icon-btn" type="button" data-close-modal="inventory">
+              ${locked ? "Done" : "Cancel"}
+            </button>
+          </div>
+        </form>
+      `,
+    )}
+  `;
+}
+
+export function renderInventoryPage(store) {
+  const collections = collectionOptions(store);
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+
+  const inventory = statusFilter === STATUSES.ARCHIVED
+    ? store.inventory.filter((item) => item.status === STATUSES.ARCHIVED)
+    : store.inventory.filter((item) => item.status !== STATUSES.ARCHIVED);
+
+  const visibleInventory = inventory
+    .filter((item) => {
+      const matchesSearch =
+        !normalizedSearch ||
+        `${item.sku} ${item.name} ${item.collectionId}`.toLowerCase().includes(normalizedSearch);
+
+      const matchesStatus = statusFilter === "all" || item.status === statusFilter;
+      const matchesCollection =
+        collectionFilter === "all" || (item.collectionId || "Unassigned") === collectionFilter;
+      const matchesAge = matchesAgeFilter(item);
+
+      return matchesSearch && matchesStatus && matchesCollection && matchesAge;
+    })
+    .slice()
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+  const rows = visibleInventory
+    .map((item) => {
+      return `
+        <tr>
+          <td><span class="mono">${escapeText(item.sku)}</span></td>
+          <td><strong>${escapeText(item.name)}</strong></td>
+          <td>${escapeText(item.collectionId)}</td>
+          <td class="money-cell">${formatMoney(item.cost)}</td>
+          <td class="money-cell">${formatMoney(item.price)}</td>
+          <td><span class="pill ${statusClass(item.status)}">${item.status}</span></td>
+          <td class="money-cell profit-cell">${formatMoney(getInventoryProfitPotential(item))}</td>
+          <td class="percent-cell">${getInventoryMarginPercent(item).toFixed(1)}%</td>
+          <td class="${ageClass(item)}">${formatAge(item)}</td>
+
+          <td class="actions-cell">
+            <button class="table-action primary-action" data-edit="${item.id}" title="Edit">
+              Edit
+            </button>
+          </td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  const mobileCards = visibleInventory
+    .map((item) => {
+      return `
+        <article class="record-card">
+          <div class="record-card-head">
+            <div>
+              <strong>${escapeText(item.name)}</strong>
+              <span class="mono">${escapeText(item.sku)}</span>
+            </div>
+
+            <span class="pill ${statusClass(item.status)}">${item.status}</span>
+          </div>
+
+          <div class="record-grid">
+            <div><span>Collection</span><strong>${escapeText(item.collectionId)}</strong></div>
+            <div><span>Cost</span><strong>${formatMoney(item.cost)}</strong></div>
+            <div><span>Price</span><strong>${formatMoney(item.price)}</strong></div>
+            <div><span>Profit Potential</span><strong class="profit-cell">${formatMoney(getInventoryProfitPotential(item))}</strong></div>
+            <div><span>Margin</span><strong>${getInventoryMarginPercent(item).toFixed(1)}%</strong></div>
+            <div><span>Age</span><strong class="${ageClass(item)}">${formatAge(item)}</strong></div>
+          </div>
+
+          <div class="record-actions">
+            <button class="table-action primary-action" data-edit="${item.id}">
+              Edit
+            </button>
+          </div>
+        </article>
+      `;
+    })
+    .join("");
+
+  return `
+    ${pageHeader(
+      "Inventory",
+      `${inventory.length} total items`,
+      `<button class="primary-btn page-action" type="button" data-open-inventory="true">+ Add Item</button>`,
+    )}
+
+    <div class="toolbar">
+      <label class="search-field">
+        Search items
+        <input id="inventory-search" value="${escapeText(searchTerm)}" placeholder="Search items..." />
+      </label>
+
+      <label>
+        Status
+        <select id="inventory-status-filter">
+          <option value="all">All Status</option>
+          ${Object.values(STATUSES)
+            .map(
+              (status) =>
+                `<option value="${status}" ${statusFilter === status ? "selected" : ""}>${status}</option>`,
+            )
+            .join("")}
+        </select>
+      </label>
+
+      <label>
+        Age
+        <select id="inventory-age-filter">
+          <option value="all" ${ageFilter === "all" ? "selected" : ""}>All Ages</option>
+          <option value="new" ${ageFilter === "new" ? "selected" : ""}>New</option>
+          <option value="30" ${ageFilter === "30" ? "selected" : ""}>30+ Days</option>
+          <option value="60" ${ageFilter === "60" ? "selected" : ""}>60+ Days</option>
+          <option value="90" ${ageFilter === "90" ? "selected" : ""}>90+ Days</option>
+        </select>
+      </label>
+
+      <label>
+        Collection
+        <select id="inventory-collection-filter">
+          <option value="all">All Collections</option>
+          ${collections
+            .map(
+              (name) =>
+                `<option value="${escapeText(name)}" ${collectionFilter === name ? "selected" : ""}>${escapeText(name)}</option>`,
+            )
+            .join("")}
+        </select>
+      </label>
+    </div>
+
+    <div class="panel table-panel">
+      ${
+        visibleInventory.length
+          ? `
+            <div class="mobile-records">${mobileCards}</div>
+
+            <div class="table-wrap desktop-table">
+              <table class="inventory-table">
+                <thead>
+                  <tr>
+                    <th>SKU</th>
+                    <th>Name</th>
+                    <th>Collection</th>
+                    <th class="money-cell">Cost</th>
+                    <th class="money-cell">Price</th>
+                    <th>Status</th>
+                    <th class="money-cell">Profit Potential</th>
+                    <th class="percent-cell">Margin</th>
+                    <th>Age</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+
+                <tbody>${rows}</tbody>
+              </table>
+            </div>
+          `
+          : emptyState("No inventory yet", "Add your first item to start tracking stock, cost, price, and profit.")
+      }
+    </div>
+
+    ${isModalOpen ? inventoryForm(store) : ""}
+  `;
+}
+
+export function bindInventoryPage(root, store, notify, refresh) {
+  const form = root.querySelector("#inventory-form");
+  const editingItem = store.inventory.find((item) => item.id === editingId);
+
+  if (form && editingItem) {
+    form.sku.value = editingItem.sku;
+    form.name.value = editingItem.name;
+    form.collectionId.value = editingItem.collectionId;
+    form.cost.value = editingItem.cost;
+    form.price.value = editingItem.price;
+    form.status.value = editingItem.status;
+    form.createdAt.value = toDateInput(editingItem.createdAt);
+    form.notes.value = editingItem.notes || "";
+    const platformSelect = root.querySelector("#inventory-action-platform");
+    const paymentSelect = root.querySelector("#inventory-action-payment");
+    if (platformSelect) platformSelect.value = editingItem.platform || "";
+    if (paymentSelect) paymentSelect.value = editingItem.paymentStatus || PAYMENT_STATUSES.PAID;
+  } else if (form) {
+    form.createdAt.value = toDateInput(new Date());
+  }
+
+  if (form) {
+    bindForm(form, async (data) => {
+      try {
+        if (data.id) {
+          await saveSupabaseInventoryItem(data.id, data);
+          notify("Item updated.");
+        } else {
+          await addSupabaseInventoryItem(data);
+          notify("Inventory added and purchase recorded.");
+        }
+
+        editingId = null;
+        isModalOpen = false;
+        refresh();
+      } catch (error) {
+        notify(error.message, true);
+        return false;
+      }
+    });
+  }
+
+  root.querySelector("#inventory-search")?.addEventListener("input", (event) => {
+    searchTerm = event.target.value;
+    refresh();
+  });
+
+  root.querySelector("#inventory-status-filter")?.addEventListener("change", (event) => {
+    statusFilter = event.target.value;
+    refresh();
+  });
+
+  root.querySelector("#inventory-collection-filter")?.addEventListener("change", (event) => {
+    collectionFilter = event.target.value;
+    refresh();
+  });
+
+  root.querySelector("#inventory-age-filter")?.addEventListener("change", (event) => {
+    ageFilter = event.target.value;
+    refresh();
+  });
+
+  root.onclick = async (event) => {
+    const button = event.target.closest("button");
+    if (!button) return;
+    if (button.dataset.busy === "true") return;
+    const originalButtonText = button.textContent;
+
+    try {
+      if (button.dataset.openInventory) {
+        editingId = null;
+        isModalOpen = true;
+        refresh();
+      }
+
+      if (button.dataset.closeModal) {
+        editingId = null;
+        isModalOpen = false;
+        refresh();
+      }
+
+      if (button.dataset.edit) {
+        editingId = button.dataset.edit;
+        isModalOpen = true;
+        refresh();
+      }
+
+      if (button.dataset.delete) {
+        const item = store.inventory.find((entry) => entry.id === button.dataset.delete);
+        const hasHistory = Boolean(
+          item &&
+          (
+            store.sales.some((sale) => sale.itemId === item.id) ||
+            store.purchases.some((purchase) => purchase.itemId === item.id) ||
+            store.expenses.some((expense) => expense.category === "Write-Off" && String(expense.details || "").startsWith(item.sku)) ||
+            [STATUSES.SOLD, STATUSES.WRITTEN_OFF, STATUSES.ARCHIVED].includes(item.status)
+          )
+        );
+        const message = hasHistory
+          ? "This action permanently removes historical records and cannot be undone.\n\nArchive is safer for business history. Delete anyway?"
+          : "Delete this item permanently?\n\nThis action cannot be undone.";
+
+        if (!confirm(message)) return;
+        if (hasHistory && !confirm("Final confirmation: permanently delete this item and related records?")) return;
+
+        button.dataset.busy = "true";
+        button.disabled = true;
+        button.textContent = "Deleting...";
+        await removeSupabaseInventoryItem(button.dataset.delete);
+        editingId = null;
+        isModalOpen = false;
+        notify("Item deleted.");
+        refresh();
+      }
+
+      if (button.dataset.statusAction) {
+        const nextStatus = button.dataset.statusAction;
+        const itemId = button.dataset.itemId;
+        const platform = root.querySelector("#inventory-action-platform")?.value || "";
+        const payment = root.querySelector("#inventory-action-payment")?.value || PAYMENT_STATUSES.PAID;
+
+        if (nextStatus === STATUSES.SOLD && !platform) {
+          notify("Choose a platform before marking sold.", true);
+          return;
+        }
+
+        if (nextStatus === STATUSES.AVAILABLE && editingItem?.status === STATUSES.SOLD && !confirm("Change this sold item back to Available and remove its sale record?")) return;
+        if (nextStatus === STATUSES.WRITTEN_OFF && !confirm("Write off this item as an expense?")) return;
+        if (nextStatus === STATUSES.ARCHIVED && !confirm("Archive this item? It will be hidden from active inventory.")) return;
+
+        const progressText = nextStatus === STATUSES.SOLD
+          ? "Selling..."
+          : nextStatus === STATUSES.AVAILABLE && editingItem?.status === STATUSES.SOLD
+            ? "Reversing..."
+            : nextStatus === STATUSES.WRITTEN_OFF
+              ? "Writing off..."
+              : nextStatus === STATUSES.ARCHIVED
+                ? "Archiving..."
+                : "Updating...";
+
+        button.dataset.busy = "true";
+        button.disabled = true;
+        button.textContent = progressText;
+        await setSupabaseInventoryStatus(itemId, nextStatus, payment, platform);
+
+        notify(`Item marked ${nextStatus}.`);
+        refresh();
+      }
+    } catch (error) {
+      notify(error.message, true);
+    } finally {
+      if (button.dataset.busy === "true") {
+        button.dataset.busy = "false";
+        button.disabled = false;
+        button.textContent = originalButtonText;
+      }
+    }
+  };
+}

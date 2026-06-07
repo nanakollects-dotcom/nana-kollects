@@ -13,6 +13,7 @@ import {
   updateSupabaseSale,
   createSupabaseExpense,
   updateSupabaseExpense,
+  deleteSupabaseExpense,
   createSupabaseCapitalEntry,
   updateSupabaseCapitalEntry,
   replaceSupabaseStoreFromBackup,
@@ -170,6 +171,13 @@ export async function addSupabaseExpense(input) {
 export async function saveSupabaseExpense(expenseId, input) {
   return runRepositoryOperation(async () => {
     await updateSupabaseExpense(expenseId, input);
+    return syncSupabaseStore();
+  });
+}
+
+export async function removeSupabaseExpense(expenseId) {
+  return runRepositoryOperation(async () => {
+    await deleteSupabaseExpense(expenseId);
     return syncSupabaseStore();
   });
 }

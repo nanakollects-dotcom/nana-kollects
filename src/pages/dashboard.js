@@ -73,6 +73,7 @@ const activityLabel = (type) =>
     "sale.reversed": "Sale reversed",
     "expense.created": "Expense added",
     "expense.updated": "Expense edited",
+    "expense.deleted": "Expense deleted",
     "collection.created": "Collection created",
     "collection.updated": "Collection edited",
     "inventory.archived": "Inventory archived",
@@ -88,7 +89,7 @@ const activityLabel = (type) =>
 const activityTone = (type) => {
   if (type === "sale.created") return "activity-good";
   if (type === "inventory.created" || type === "sale.updated") return "activity-info";
-  if (type === "inventory.written_off" || type === "inventory.deleted") return "activity-danger";
+  if (type === "inventory.written_off" || type === "inventory.deleted" || type === "expense.deleted") return "activity-danger";
   if (type === "expense.created" || type === "sale.reversed") return "activity-warn";
   if (type === "capital.created" || type === "collection.created") return "activity-purple";
   if (type.startsWith("import.")) return "activity-info";
@@ -355,6 +356,23 @@ function renderActionCenter(store, filters) {
   `;
 }
 
+function renderRecentActivity(activities) {
+  return `
+    <section class="panel activity-panel">
+      <div class="panel-heading">
+        <h2>Recent Activity</h2>
+        <span>Latest 5 updates, all time</span>
+      </div>
+
+      ${
+        activities
+          ? `<div class="table-wrap"><table class="activity-table"><thead><tr><th>Date</th><th>Action</th><th>Amount/Details</th></tr></thead><tbody>${activities}</tbody></table></div>`
+          : `<div class="empty-state"><strong>No activity yet</strong><span>New capital, inventory, sales, and expenses will appear here.</span></div>`
+      }
+    </section>
+  `;
+}
+
 function renderSlowMovingInventory(items) {
   return `
     <section class="panel activity-panel daily-card">
@@ -494,6 +512,8 @@ export function renderDashboardPage(store, filters) {
       ${renderActionCenter(store, filters)}
     </section>
 
+    ${renderRecentActivity(activities)}
+
     ${disclosure("Analytics", `
       ${renderMonthlyPerformance(performance)}
       ${renderRecoveryProgress(store)}
@@ -501,18 +521,6 @@ export function renderDashboardPage(store, filters) {
     `, "analytics-disclosure")}
 
     ${disclosure("Management", `
-      <section class="panel activity-panel">
-        <div class="panel-heading">
-          <h2>Recent Activity</h2>
-          <span>Latest 5 updates, all time</span>
-        </div>
-
-        ${
-          activities
-            ? `<div class="table-wrap"><table class="activity-table"><thead><tr><th>Date</th><th>Action</th><th>Amount/Details</th></tr></thead><tbody>${activities}</tbody></table></div>`
-            : `<div class="empty-state"><strong>No activity yet</strong><span>New capital, inventory, sales, and expenses will appear here.</span></div>`
-        }
-      </section>
       ${renderImportExportPanel()}
       ${renderBackupPanel()}
     `)}

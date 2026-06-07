@@ -881,6 +881,16 @@ button:disabled {
   color: var(--danger);
 }
 
+.table-action.danger {
+  border-color: var(--danger-soft);
+  color: var(--danger);
+}
+
+.table-action.danger:hover {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+
 .profit-loss {
   color: var(--danger);
 }

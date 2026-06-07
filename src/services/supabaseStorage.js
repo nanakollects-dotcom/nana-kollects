@@ -859,6 +859,32 @@ export async function updateSupabaseExpense(expenseId, input) {
   return data;
 }
 
+export async function deleteSupabaseExpense(expenseId) {
+  const userId = await getUserId();
+  const store = currentStore();
+  const expense = store.expenses.find((entry) => entry.id === expenseId);
+  assert(expense, "Expense not found.");
+
+  const { error } = await supabase
+    .from("expenses")
+    .delete()
+    .eq("id", expenseId)
+    .eq("user_id", userId);
+
+  if (error) throw error;
+
+  await insertActivity(userId, {
+    entityType: "expense",
+    entityId: expenseId,
+    action: "expense.deleted",
+    label: `Deleted expense ${formatLogMoney(expense.amount)} - ${expense.category}`,
+    details: `Deleted expense ${formatLogMoney(expense.amount)} - ${expense.category}`,
+    amount: expense.amount,
+  });
+
+  return true;
+}
+
 export async function createSupabaseCapitalEntry(input) {
   const userId = await getUserId();
   const amount = money(input.amount);

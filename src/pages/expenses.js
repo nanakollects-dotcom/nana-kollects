@@ -1,6 +1,6 @@
 import { getExpenseSummary } from "../core/financials.js";
 import { isWithinRange } from "../core/filters.js";
-import { addSupabaseExpense, EXPENSE_CATEGORIES, saveSupabaseExpense } from "../services/repository.js";
+import { addSupabaseExpense, EXPENSE_CATEGORIES, removeSupabaseExpense, saveSupabaseExpense } from "../services/repository.js";
 import { bindForm, countMetric, emptyState, metricGrid, modal, moneyMetric, pageHeader } from "../components/ui.js";
 import { formatDate, formatMoney } from "../components/format.js";
 
@@ -75,7 +75,10 @@ export function renderExpensesPage(store, filters = {}) {
           <td><span class="pill">${expense.category}</span></td>
           <td>${expenseDetails(expense, store)}</td>
           <td>${formatMoney(expense.amount)}</td>
-          <td class="actions-cell"><button class="table-action" data-edit-expense="${expense.id}">Edit</button></td>
+          <td class="actions-cell">
+            <button class="table-action" data-edit-expense="${expense.id}">Edit</button>
+            <button class="table-action danger" data-delete-expense="${expense.id}">Delete</button>
+          </td>
         </tr>
       `,
     )
@@ -98,6 +101,7 @@ export function renderExpensesPage(store, filters = {}) {
           </div>
           <div class="record-actions">
             <button class="table-action" data-edit-expense="${expense.id}">Edit</button>
+            <button class="table-action danger" data-delete-expense="${expense.id}">Delete</button>
           </div>
         </article>
       `,
@@ -157,9 +161,12 @@ export function bindExpensesPage(root, store, notify, refresh) {
     });
   }
 
-  root.onclick = (event) => {
+  root.onclick = async (event) => {
     const button = event.target.closest("button");
     if (!button) return;
+    if (button.dataset.busy === "true") return;
+    const originalButtonText = button.textContent;
+
     if (button.dataset.openExpense) {
       editingExpenseId = null;
       isExpenseModalOpen = true;
@@ -174,6 +181,29 @@ export function bindExpensesPage(root, store, notify, refresh) {
       editingExpenseId = null;
       isExpenseModalOpen = false;
       refresh();
+    }
+    if (button.dataset.deleteExpense) {
+      const confirmed = confirm("Delete this expense record? This cannot be undone.");
+      if (!confirmed) return;
+
+      try {
+        button.dataset.busy = "true";
+        button.disabled = true;
+        button.textContent = "Deleting...";
+        await removeSupabaseExpense(button.dataset.deleteExpense);
+        if (editingExpenseId === button.dataset.deleteExpense) {
+          editingExpenseId = null;
+          isExpenseModalOpen = false;
+        }
+        notify("Expense deleted.");
+        refresh();
+      } catch (error) {
+        notify(error.message, true);
+      } finally {
+        button.dataset.busy = "false";
+        button.disabled = false;
+        button.textContent = originalButtonText;
+      }
     }
   };
 }

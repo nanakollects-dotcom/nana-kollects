@@ -80,8 +80,8 @@ export function renderCollectionsPage(store, filters) {
 
           <div class="collection-hero-stats">
             <div>
-              <span>Recovery</span>
-              <strong>${formatPercent(collection.recoveryRate)}</strong>
+              <span>Profit Collected</span>
+              <strong class="${collection.recordedProfit >= 0 ? "profit-cell" : "profit-loss"}">${formatMoney(collection.recordedProfit)}</strong>
             </div>
             <div>
               <span>Projected Profit</span>
@@ -99,6 +99,7 @@ export function renderCollectionsPage(store, filters) {
           <div class="collection-stats">
             <div><strong>${collection.itemsLeft}</strong><span>Items Left</span></div>
             <div><strong>${collection.soldStock}</strong><span>Sold</span></div>
+            <div><strong>${formatPercent(collection.recoveryRate)}</strong><span>Recovery</span></div>
             <div><strong>${formatPercent(collection.sellThrough)}</strong><span>Sell-through</span></div>
           </div>
 

@@ -2,7 +2,7 @@ import { formatMoney, formatPercent } from "./format.js";
 
 const iconMap = {
   cash: ["Cash Available", "Current Cash Available", "Net Capital", "Current Cash", "Cash Recovered", "Still To Recover"],
-  profit: ["Net Profit", "Profit", "Gross Profit", "Top Profit Item", "Expected Profit Left"],
+  profit: ["Profit", "Top Profit Item", "Expected Profit Left"],
   revenue: ["Revenue", "Average Order Value", "Avg Order Value", "Sales Potential Left", "Potential Sales"],
   platform: ["Best Platform"],
   expense: ["Expenses", "Total Expenses", "Write-Off Expenses", "Write-Offs", "Inventory Loss", "Operating Expenses"],

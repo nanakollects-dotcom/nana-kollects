@@ -52,7 +52,7 @@ export function getExpenses(store, filters = {}) {
 }
 
 export function getProfit(store, filters = {}) {
-  return getRevenue(store, filters) - getCostOfSoldItems(store, filters) - getExpenses(store, filters);
+  return getRevenue(store, filters) - getCostOfSoldItems(store, filters);
 }
 
 export function getInventoryCost(store) {

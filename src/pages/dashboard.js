@@ -212,7 +212,7 @@ function renderRecoveryProgress(store) {
   `;
 }
 
-function renderOverviewPanel(store, filters, status, netProfit) {
+function renderOverviewPanel(store, filters, status, profit) {
   return `
     <section class="dashboard-overview-panel">
       <div class="overview-top">
@@ -220,9 +220,9 @@ function renderOverviewPanel(store, filters, status, netProfit) {
           <span>Current Cash</span>
           <strong>${formatMoney(getCashAvailable(store))}</strong>
         </button>
-        <button class="overview-money ${netProfit >= 0 ? "positive" : "negative"}" type="button" data-card-page="sales">
-          <span>Net Profit</span>
-          <strong>${formatMoney(netProfit)}</strong>
+        <button class="overview-money ${profit >= 0 ? "positive" : "negative"}" type="button" data-card-page="sales">
+          <span>Profit</span>
+          <strong>${formatMoney(profit)}</strong>
         </button>
       </div>
 
@@ -385,9 +385,9 @@ function renderSlowMovingInventory(items) {
 function renderMonthlyPerformance(performance) {
   const hasData =
     performance.revenue ||
+    performance.cogs ||
     performance.expenses ||
-    performance.grossProfit ||
-    performance.netProfit ||
+    performance.profit ||
     performance.salesRecordsCount;
 
   return `
@@ -400,9 +400,9 @@ function renderMonthlyPerformance(performance) {
         hasData
           ? metricGrid([
               moneyMetric("Revenue", performance.revenue, "good"),
+              moneyMetric("COGS", performance.cogs),
               moneyMetric("Expenses", performance.expenses, "warn"),
-              moneyMetric("Gross Profit", performance.grossProfit, "good"),
-              moneyMetric("Net Profit", performance.netProfit, performance.netProfit >= 0 ? "good" : "danger"),
+              moneyMetric("Profit", performance.profit, performance.profit >= 0 ? "good" : "danger"),
               percentMetric("ROI", performance.roi, "focus"),
               countMetric("Sales", performance.salesRecordsCount),
             ])
@@ -461,7 +461,7 @@ export function renderDashboardPage(store, filters) {
     .sort((a, b) => b.ageDays - a.ageDays)
     .slice(0, 5);
   const performance = getMonthlyPerformance(store, filters);
-  const netProfit = getNetProfit(store, filters);
+  const profit = getNetProfit(store, filters);
   const businessStatus = getBusinessStatus(store, filters);
 
   const activities = store.logs
@@ -482,7 +482,7 @@ export function renderDashboardPage(store, filters) {
   return `
     ${pageHeader("Dashboard", "Business command center")}
 
-    ${renderOverviewPanel(store, filters, businessStatus, netProfit)}
+    ${renderOverviewPanel(store, filters, businessStatus, profit)}
 
     <section class="dashboard-collection-grid">
       ${renderMainCollectionPerformance(store, filters)}

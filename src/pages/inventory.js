@@ -78,6 +78,22 @@ const canRunStatusAction = (current, next) => {
 
 const actionDisabled = (current, next) => canRunStatusAction(current, next) ? "" : "disabled";
 
+const skuSortValue = (sku) => {
+  const match = String(sku || "").match(/^NK-(\d+)$/i);
+  return match ? Number(match[1]) : Number.POSITIVE_INFINITY;
+};
+
+const sortBySkuAscending = (a, b) => {
+  const firstSkuNumber = skuSortValue(a.sku);
+  const secondSkuNumber = skuSortValue(b.sku);
+
+  if (firstSkuNumber !== secondSkuNumber) return firstSkuNumber - secondSkuNumber;
+  return String(a.sku || "").localeCompare(String(b.sku || ""), undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
+};
+
 export function setInventoryCollectionFilter(collectionName) {
   collectionFilter = collectionName || "all";
   searchTerm = "";
@@ -270,7 +286,7 @@ export function renderInventoryPage(store) {
       return matchesSearch && matchesStatus && matchesCollection && matchesAge;
     })
     .slice()
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    .sort(sortBySkuAscending);
 
   const rows = visibleInventory
     .map((item) => {

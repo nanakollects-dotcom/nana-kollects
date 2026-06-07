@@ -25,7 +25,7 @@ export function getTotalExpenses(store, filters = {}) {
 }
 
 export function getNetProfit(store, filters = {}) {
-  return toMoney(getGrossProfit(store, filters) - getTotalExpenses(store, filters));
+  return getGrossProfit(store, filters);
 }
 
 export function getInventoryValue(store) {
@@ -115,7 +115,7 @@ export function getCurrentCapital(store) {
 export function getROI(store, filters = {}) {
   const capital = getCapitalAdded(store);
   if (!capital) return 0;
-  return toMoney((getNetProfit(store, filters) / capital) * 100);
+  return toMoney((getGrossProfit(store, filters) / capital) * 100);
 }
 
 export function getAvailableItemsCount(store) {
@@ -296,23 +296,23 @@ export function getAttentionNeeded(store, filters = {}) {
 
 export function getBusinessStatus(store, filters = {}) {
   const recovery = getCapitalRecoverySummary(store, filters);
-  const netProfit = getNetProfit(store, filters);
+  const profit = getGrossProfit(store, filters);
   const cash = getCashAvailable(store);
   const capital = getCapitalAdded(store);
   const itemsLeft = store.inventory.filter(activeInventory).length;
   const slowMovingCount = getSlowMovingInventory(store, 30, Number.POSITIVE_INFINITY).length;
 
-  if (netProfit < 0 || (capital > 0 && cash < 0) || recovery.recoveryRate < 30 || slowMovingCount >= 8) {
+  if (profit < 0 || (capital > 0 && cash < 0) || recovery.recoveryRate < 30 || slowMovingCount >= 8) {
     return {
       label: "At Risk",
       tone: "danger",
       recoveryRate: recovery.recoveryRate,
       itemsLeft,
-      focus: "Review expenses, pricing, and slow stock.",
+      focus: "Review pricing, recovery, and slow stock.",
     };
   }
 
-  if (recovery.recoveryRate >= 70 && netProfit >= 0 && slowMovingCount <= 2) {
+  if (recovery.recoveryRate >= 70 && profit >= 0 && slowMovingCount <= 2) {
     return {
       label: "Healthy",
       tone: "good",
@@ -492,11 +492,14 @@ export function getTopProfitItem(store, filters = {}) {
 
 export function getMonthlyPerformance(store, filters = {}) {
   const salesRecordsCount = getFinancialSalesCount(store, filters);
+  const profit = getGrossProfit(store, filters);
   return {
     revenue: getRevenue(store, filters),
+    cogs: getCOGS(store, filters),
     expenses: getTotalExpenses(store, filters),
-    grossProfit: getGrossProfit(store, filters),
-    netProfit: getNetProfit(store, filters),
+    grossProfit: profit,
+    netProfit: profit,
+    profit,
     roi: getROI(store, filters),
     salesRecordsCount,
     soldItemsCount: salesRecordsCount,
@@ -506,7 +509,7 @@ export function getMonthlyPerformance(store, filters = {}) {
 export function getHeroInsights(store, filters = {}) {
   const revenue = getRevenue(store, filters);
   const orders = getFinancialSalesCount(store, filters);
-  const netProfit = getNetProfit(store, filters);
+  const profit = getGrossProfit(store, filters);
   const bestPlatform = getBestPlatform(store, filters);
   const capital = getCapitalAdded(store);
   const cash = getCashAvailable(store);
@@ -520,7 +523,7 @@ export function getHeroInsights(store, filters = {}) {
       : cash > capital
         ? `Cash is ${new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 }).format(cashDifference)} above capital after paid sales`
         : `${cashShare}% of capital remains as cash after purchases and expenses`,
-    profit: netProfit ? "Profit after costs and expenses" : "No profit recorded this period",
+    profit: profit ? "Profit from sold items after item costs" : "No profit recorded this period",
     revenue: orders ? `${orders} sale${orders === 1 ? "" : "s"} this period` : "No sales this period",
     platform: bestPlatform ? `${bestPlatform.platform} is leading this period` : "No platform leader yet",
   };

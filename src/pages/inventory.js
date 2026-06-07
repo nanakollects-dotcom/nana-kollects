@@ -188,11 +188,6 @@ function inventoryForm(store) {
                 <input type="number" name="price" min="0" step="0.01" required ${locked ? "disabled" : ""} />
               </label>
             </div>
-
-            <div class="read-only-metric">
-              <span>Profit Potential</span>
-              <strong>${formatMoney(editingItem ? getInventoryProfitPotential(editingItem) : 0)}</strong>
-            </div>
           </section>
 
           <section class="modal-section">

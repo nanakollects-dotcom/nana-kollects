@@ -80,14 +80,24 @@ const actionDisabled = (current, next) => canRunStatusAction(current, next) ? ""
 
 const skuSortValue = (sku) => {
   const match = String(sku || "").match(/^NK-(\d+)$/i);
-  return match ? Number(match[1]) : Number.POSITIVE_INFINITY;
+  return match ? Number(match[1]) : null;
 };
 
-const sortBySkuAscending = (a, b) => {
+const sortBySkuDescending = (a, b) => {
   const firstSkuNumber = skuSortValue(a.sku);
   const secondSkuNumber = skuSortValue(b.sku);
 
-  if (firstSkuNumber !== secondSkuNumber) return firstSkuNumber - secondSkuNumber;
+  if (firstSkuNumber !== null && secondSkuNumber !== null && firstSkuNumber !== secondSkuNumber) {
+    return secondSkuNumber - firstSkuNumber;
+  }
+
+  if (firstSkuNumber !== null) return -1;
+  if (secondSkuNumber !== null) return 1;
+
+  const firstCreatedAt = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+  const secondCreatedAt = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+  if (firstCreatedAt !== secondCreatedAt) return secondCreatedAt - firstCreatedAt;
+
   return String(a.sku || "").localeCompare(String(b.sku || ""), undefined, {
     numeric: true,
     sensitivity: "base",
@@ -286,7 +296,7 @@ export function renderInventoryPage(store) {
       return matchesSearch && matchesStatus && matchesCollection && matchesAge;
     })
     .slice()
-    .sort(sortBySkuAscending);
+    .sort(sortBySkuDescending);
 
   const rows = visibleInventory
     .map((item) => {

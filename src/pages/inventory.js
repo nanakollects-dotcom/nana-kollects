@@ -280,7 +280,7 @@ function filteredInventory(store) {
     .filter((item) => {
       const matchesSearch =
         !normalizedSearch ||
-        `${item.sku} ${item.name} ${item.collectionId}`.toLowerCase().includes(normalizedSearch);
+        `${item.sku} ${item.name} ${item.collectionId} ${item.status}`.toLowerCase().includes(normalizedSearch);
 
       const matchesStatus = statusFilter === "all" || item.status === statusFilter;
       const matchesCollection =
@@ -380,7 +380,9 @@ function renderInventoryResults(store) {
               </table>
             </div>
           `
-          : emptyState("No inventory yet", "Add your first item to start tracking stock, cost, price, and profit.")
+          : store.inventory.length
+            ? emptyState("No matching items found.", "Try a different keyword or clear filters.")
+            : emptyState("No inventory yet", "Add your first item to start tracking stock, cost, price, and profit.")
       }
     </div>
   `;

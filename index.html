@@ -56,7 +56,7 @@
         <main class="main">
           <header class="topbar">
             <label class="filter-control">
-              <span>Period</span>
+              <span>Filter Period</span>
               <select id="time-filter">
                 <option value="today">Today</option>
                 <option value="yesterday">Yesterday</option>
@@ -73,14 +73,18 @@
 
             <div class="custom-range" id="custom-range" hidden>
               <label>
-                <span>Start</span>
+                <span>Start Date</span>
                 <input type="date" id="custom-start" />
               </label>
 
               <label>
-                <span>End</span>
+                <span>End Date</span>
                 <input type="date" id="custom-end" />
               </label>
+
+              <button class="primary-btn custom-apply" type="button" id="custom-apply">
+                Apply Filter
+              </button>
             </div>
 
             <div class="page-action-slot" id="page-action-slot"></div>

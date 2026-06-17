@@ -269,15 +269,14 @@ function inventoryForm(store) {
   `;
 }
 
-export function renderInventoryPage(store) {
-  const collections = collectionOptions(store);
+function filteredInventory(store) {
   const normalizedSearch = searchTerm.trim().toLowerCase();
 
   const inventory = statusFilter === STATUSES.ARCHIVED
     ? store.inventory.filter((item) => item.status === STATUSES.ARCHIVED)
     : store.inventory.filter((item) => item.status !== STATUSES.ARCHIVED);
 
-  const visibleInventory = inventory
+  return inventory
     .filter((item) => {
       const matchesSearch =
         !normalizedSearch ||
@@ -292,6 +291,10 @@ export function renderInventoryPage(store) {
     })
     .slice()
     .sort(sortBySkuDescending);
+}
+
+function renderInventoryResults(store) {
+  const visibleInventory = filteredInventory(store);
 
   const rows = visibleInventory
     .map((item) => {
@@ -350,6 +353,46 @@ export function renderInventoryPage(store) {
     .join("");
 
   return `
+    <div class="panel table-panel" data-inventory-results="true">
+      ${
+        visibleInventory.length
+          ? `
+            <div class="mobile-records">${mobileCards}</div>
+
+            <div class="table-wrap desktop-table">
+              <table class="inventory-table">
+                <thead>
+                  <tr>
+                    <th>SKU</th>
+                    <th>Name</th>
+                    <th>Collection</th>
+                    <th class="money-cell">Cost</th>
+                    <th class="money-cell">Price</th>
+                    <th>Status</th>
+                    <th class="money-cell">Profit Potential</th>
+                    <th class="percent-cell">Margin</th>
+                    <th>Age</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+
+                <tbody>${rows}</tbody>
+              </table>
+            </div>
+          `
+          : emptyState("No inventory yet", "Add your first item to start tracking stock, cost, price, and profit.")
+      }
+    </div>
+  `;
+}
+
+export function renderInventoryPage(store) {
+  const collections = collectionOptions(store);
+  const inventory = statusFilter === STATUSES.ARCHIVED
+    ? store.inventory.filter((item) => item.status === STATUSES.ARCHIVED)
+    : store.inventory.filter((item) => item.status !== STATUSES.ARCHIVED);
+
+  return `
     ${pageHeader(
       "Inventory",
       `${inventory.length} total items`,
@@ -400,36 +443,7 @@ export function renderInventoryPage(store) {
       </label>
     </div>
 
-    <div class="panel table-panel">
-      ${
-        visibleInventory.length
-          ? `
-            <div class="mobile-records">${mobileCards}</div>
-
-            <div class="table-wrap desktop-table">
-              <table class="inventory-table">
-                <thead>
-                  <tr>
-                    <th>SKU</th>
-                    <th>Name</th>
-                    <th>Collection</th>
-                    <th class="money-cell">Cost</th>
-                    <th class="money-cell">Price</th>
-                    <th>Status</th>
-                    <th class="money-cell">Profit Potential</th>
-                    <th class="percent-cell">Margin</th>
-                    <th>Age</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-
-                <tbody>${rows}</tbody>
-              </table>
-            </div>
-          `
-          : emptyState("No inventory yet", "Add your first item to start tracking stock, cost, price, and profit.")
-      }
-    </div>
+    ${renderInventoryResults(store)}
 
     ${isModalOpen ? inventoryForm(store) : ""}
   `;
@@ -479,7 +493,10 @@ export function bindInventoryPage(root, store, notify, refresh) {
 
   root.querySelector("#inventory-search")?.addEventListener("input", (event) => {
     searchTerm = event.target.value;
-    refresh();
+    const results = root.querySelector("[data-inventory-results]");
+    if (results) {
+      results.outerHTML = renderInventoryResults(store);
+    }
   });
 
   root.querySelector("#inventory-status-filter")?.addEventListener("change", (event) => {

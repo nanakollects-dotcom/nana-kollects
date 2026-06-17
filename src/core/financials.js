@@ -400,7 +400,7 @@ export function getActionCenterItems(store, filters = {}) {
     const amountToTarget = toMoney(Math.max(targetRecoveryAmount - current.salesCollected, 0));
 
     if (amountToTarget > 0) {
-      actions.push(`Recover ${new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 }).format(amountToTarget)} more to reach 70% recovery.`);
+      actions.push(`Sell more inventory to recover ${new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 }).format(amountToTarget)} more of your inventory cost.`);
     }
 
     if (current.itemsLeft > 0) {
@@ -408,12 +408,12 @@ export function getActionCenterItems(store, filters = {}) {
     }
 
     if (current.recoveryRate < 70) {
-      actions.push("Avoid buying another collection until recovery improves.");
+      actions.push("Avoid buying another collection until more inventory cost is recovered.");
     }
   }
 
   if (bestPlatform?.platform) {
-    actions.push(`Push ${bestPlatform.platform} because it brings the most revenue.`);
+    actions.push(`Push ${bestPlatform.platform} because it brings the most sales collected.`);
   }
 
   return actions.slice(0, 3);

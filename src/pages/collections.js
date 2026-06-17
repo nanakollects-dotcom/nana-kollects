@@ -99,7 +99,7 @@ export function renderCollectionsPage(store, filters) {
           <div class="collection-stats">
             <div><strong>${collection.itemsLeft}</strong><span>Items Left</span></div>
             <div><strong>${collection.soldStock}</strong><span>Sold</span></div>
-            <div><strong>${formatPercent(collection.recoveryRate)}</strong><span>Recovery</span></div>
+            <div><strong>${formatMoney(collection.inventoryLeftValue)}</strong><span>Inventory Left</span></div>
             <div><strong>${formatPercent(collection.sellThrough)}</strong><span>Sell-through</span></div>
           </div>
 

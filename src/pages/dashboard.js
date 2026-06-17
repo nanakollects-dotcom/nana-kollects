@@ -228,9 +228,9 @@ function renderOverviewPanel(store, filters, status, profit) {
       </div>
 
       <div class="overview-bottom">
-        <div><span>Revenue</span><strong class="profit-cell">${formatMoney(getRevenue(store, filters))}</strong></div>
+        <div><span>Sales Collected</span><strong class="profit-cell">${formatMoney(getRevenue(store, filters))}</strong></div>
         <div><span>Expenses</span><strong class="warning-action">${formatMoney(getTotalExpenses(store, filters))}</strong></div>
-        <div><span>Recovery</span><strong>${formatPercent(status.recoveryRate)}</strong></div>
+        <div><span>Inventory Value</span><strong>${formatMoney(getExpectedSalesLeft(store))}</strong></div>
         <div><span>Items Left</span><strong>${status.itemsLeft}</strong></div>
       </div>
     </section>
@@ -312,7 +312,7 @@ function renderPlatformDistributionCard(store, filters) {
               <div class="platform-donut" style="${chartStyle}" aria-label="Sales by platform">
                 <div>
                   <strong>${formatMoney(totalRevenue)}</strong>
-                  <span>Revenue</span>
+                  <span>Sales Collected</span>
                 </div>
               </div>
 
@@ -417,7 +417,7 @@ function renderMonthlyPerformance(performance) {
       ${
         hasData
           ? metricGrid([
-              moneyMetric("Revenue", performance.revenue, "good"),
+              moneyMetric("Sales Collected", performance.revenue, "good"),
               moneyMetric("COGS", performance.cogs),
               moneyMetric("Expenses", performance.expenses, "warn"),
               moneyMetric("Profit", performance.profit, performance.profit >= 0 ? "good" : "danger"),

@@ -66,6 +66,7 @@ export function getDateRange(period, customRange = {}) {
   if (period === "custom") {
     const startDate = customRange.startDate ? startOfDay(new Date(customRange.startDate)) : null;
     const endDate = customRange.endDate ? endOfDay(new Date(customRange.endDate)) : null;
+    if (!startDate || !endDate) return { startDate: null, endDate: null, label: "Custom Range" };
     const label = startDate && endDate
       ? `Custom: ${formatLabelDate(startDate)} - ${formatLabelDate(endDate)}`
       : "Custom Range";

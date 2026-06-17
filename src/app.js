@@ -40,6 +40,7 @@ const timeFilter = document.querySelector("#time-filter");
 const customRange = document.querySelector("#custom-range");
 const customStart = document.querySelector("#custom-start");
 const customEnd = document.querySelector("#custom-end");
+const customApply = document.querySelector("#custom-apply");
 const pageActionSlot = document.querySelector("#page-action-slot");
 const main = document.querySelector(".main");
 const topbar = document.querySelector(".topbar");
@@ -50,6 +51,10 @@ const navOverlay = document.querySelector("#nav-overlay");
 let activePage = "dashboard";
 let pendingOpen = "";
 let customDateRange = {
+  startDate: "",
+  endDate: "",
+};
+let pendingCustomDateRange = {
   startDate: "",
   endDate: "",
 };
@@ -258,15 +263,35 @@ nav.addEventListener("click", (event) => {
   refresh();
 });
 
-timeFilter.addEventListener("change", refresh);
-
-customStart.addEventListener("change", () => {
-  customDateRange = { ...customDateRange, startDate: customStart.value };
+timeFilter.addEventListener("change", () => {
+  if (timeFilter.value === "custom") {
+    pendingCustomDateRange = { ...customDateRange };
+    customStart.value = pendingCustomDateRange.startDate;
+    customEnd.value = pendingCustomDateRange.endDate;
+  }
   refresh();
 });
 
+customStart.addEventListener("change", () => {
+  pendingCustomDateRange = { ...pendingCustomDateRange, startDate: customStart.value };
+});
+
 customEnd.addEventListener("change", () => {
-  customDateRange = { ...customDateRange, endDate: customEnd.value };
+  pendingCustomDateRange = { ...pendingCustomDateRange, endDate: customEnd.value };
+});
+
+customApply.addEventListener("click", () => {
+  if (!pendingCustomDateRange.startDate || !pendingCustomDateRange.endDate) {
+    notify("Choose both start and end dates.", true);
+    return;
+  }
+
+  if (new Date(pendingCustomDateRange.startDate) > new Date(pendingCustomDateRange.endDate)) {
+    notify("Start date must be before end date.", true);
+    return;
+  }
+
+  customDateRange = { ...pendingCustomDateRange };
   refresh();
 });
 

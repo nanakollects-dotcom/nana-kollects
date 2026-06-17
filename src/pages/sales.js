@@ -100,7 +100,7 @@ function renderPlatformSales(store, filters) {
         </div>
         <div class="record-grid">
           <div><span>Sales</span><strong>${row.orders}</strong></div>
-          <div><span>Revenue</span><strong>${formatMoney(row.revenue)}</strong></div>
+          <div><span>Sales Collected</span><strong>${formatMoney(row.revenue)}</strong></div>
           <div><span>Profit</span><strong class="profit-cell">${formatMoney(row.profit)}</strong></div>
         </div>
       </article>
@@ -115,7 +115,7 @@ function renderPlatformSales(store, filters) {
       </div>
       ${
         rows.length
-          ? `<div class="mobile-records">${cards}</div><div class="table-wrap desktop-table"><table><thead><tr><th>Platform</th><th>Sales</th><th>Revenue</th><th>Profit</th><th>Share</th></tr></thead><tbody>${tableRows}</tbody></table></div>`
+          ? `<div class="mobile-records">${cards}</div><div class="table-wrap desktop-table"><table><thead><tr><th>Platform</th><th>Sales</th><th>Sales Collected</th><th>Profit</th><th>Share</th></tr></thead><tbody>${tableRows}</tbody></table></div>`
           : emptyState("No platform sales yet for this period", "Mark an item as sold and choose a platform to see platform performance.")
       }
     </section>
@@ -178,7 +178,7 @@ export function renderSalesPage(store, filters = {}) {
     ${pageHeader("Sales", `${sortedSales.length} sales`, "")}
 
     ${metricGrid([
-      moneyMetric("Revenue", summary.revenue, "good"),
+      moneyMetric("Sales Collected", summary.revenue, "good"),
       moneyMetric("Profit", summary.profit, summary.profit >= 0 ? "good" : "danger"),
       countMetric("Sales", summary.orders),
       moneyMetric("Average Order Value", summary.averageOrderValue, "focus"),

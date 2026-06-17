@@ -30,7 +30,7 @@ export function buildFullBusinessReportRows(store, filters = {}) {
     ["Generated At", new Date().toISOString()],
     [],
     ["Profit Summary"],
-    ["Revenue", getRevenue(store, filters)],
+    ["Sales Collected", getRevenue(store, filters)],
     ["COGS", getCOGS(store, filters)],
     ["Profit", getGrossProfit(store, filters)],
     ["Expenses", getTotalExpenses(store, filters)],
@@ -71,7 +71,7 @@ export function buildFullBusinessReportRows(store, filters = {}) {
     ["Operating Expenses", expenses.operatingExpenses],
     [],
     ["Collections Summary"],
-    ["Collection", "Items", "Sold Stock", "Left", "Revenue", "Profit", "ROI"],
+    ["Collection", "Items", "Sold Stock", "Left", "Sales Collected", "Profit", "ROI"],
     ...collections.map((collection) => [
       collection.name,
       collection.itemsCount,
@@ -97,7 +97,7 @@ export function buildFullBusinessReportRows(store, filters = {}) {
     ]),
     [],
     ["Platform Summary"],
-    ["Platform", "Sales", "Revenue", "Profit", "Revenue Share", "Avg Profit / Sale"],
+    ["Platform", "Sales", "Sales Collected", "Profit", "Sales Share", "Avg Profit / Sale"],
     ...platforms.map((platform) => [
       platform.platform,
       platform.orders,

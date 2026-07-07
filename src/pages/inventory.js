@@ -128,7 +128,7 @@ function inventoryForm(store) {
     ${modal(
       title,
       `
-        <form class="form-panel modal-form" id="inventory-form">
+        <form class="form-panel modal-form inventory-modal-form" id="inventory-form">
           <div class="modal-header">
             <h2>${title}</h2>
             <button class="icon-btn" type="button" data-close-modal="inventory">Close</button>
@@ -265,6 +265,7 @@ function inventoryForm(store) {
           </div>
         </form>
       `,
+      "inventory-modal-panel",
     )}
   `;
 }
@@ -475,6 +476,8 @@ export function bindInventoryPage(root, store, notify, refresh) {
   if (form) {
     bindForm(form, async (data) => {
       try {
+        data.price = form.elements.price.value;
+
         if (data.id) {
           await saveSupabaseInventoryItem(data.id, data);
           notify("Item updated.");

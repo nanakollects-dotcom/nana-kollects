@@ -96,10 +96,10 @@ export function pageHeader(title, subtitle, action = "") {
   `;
 }
 
-export function modal(title, body) {
+export function modal(title, body, panelClass = "") {
   return `
     <div class="modal-backdrop" role="presentation">
-      <section class="modal-panel" role="dialog" aria-modal="true" aria-label="${title}">
+      <section class="modal-panel ${panelClass}" role="dialog" aria-modal="true" aria-label="${title}">
         ${body}
       </section>
     </div>

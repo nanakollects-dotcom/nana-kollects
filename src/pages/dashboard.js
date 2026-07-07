@@ -59,7 +59,7 @@ const barWidthClass = (percent) => {
   return `bar-w-${bucket}`;
 };
 
-const platformColors = ["#7c3aed", "#008f5a", "#2563eb", "#f59e0b", "#ef4444", "#667085"];
+const platformColors = ["#e89cb5", "#7dc3dc", "#008f5a", "#f59e0b", "#ef4444", "#667085"];
 
 const activityLabel = (type) =>
   ({

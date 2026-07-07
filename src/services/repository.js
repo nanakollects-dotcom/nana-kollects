@@ -136,7 +136,24 @@ export async function addSupabaseInventoryItem(input) {
 export async function saveSupabaseInventoryItem(itemId, input) {
   return runRepositoryOperation(async () => {
     await updateSupabaseInventoryItem(itemId, input);
-    return syncSupabaseStore();
+    const syncedStore = await syncSupabaseStore();
+    const expectedPrice = Math.round(Number(input.price || 0) * 100) / 100;
+    const savedItem = syncedStore.inventory.find((item) => item.id === itemId);
+
+    if (!savedItem || Math.round(Number(savedItem.price || 0) * 100) / 100 !== expectedPrice) {
+      throw new Error("Item price did not persist. Please refresh and try again.");
+    }
+
+    if (savedItem.status === STATUSES.SOLD) {
+      const linkedSales = syncedStore.sales.filter((sale) => sale.itemId === itemId);
+      const savedSale = linkedSales.length === 1 ? linkedSales[0] : null;
+
+      if (!savedSale || Math.round(Number(savedSale.price || 0) * 100) / 100 !== expectedPrice) {
+        throw new Error("Sold item price did not persist to the linked sale. Please refresh and try again.");
+      }
+    }
+
+    return syncedStore;
   });
 }
 

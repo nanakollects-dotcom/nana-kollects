@@ -194,16 +194,22 @@ function inventoryForm(store) {
 
           <section class="modal-section">
             <h3>Inventory Information</h3>
-          <label>
-            Status
-            <select name="status" ${locked || soldReadOnly ? "disabled" : ""}>
-              <option>${STATUSES.AVAILABLE}</option>
-              <option>${STATUSES.RESERVED}</option>
-              <option ${itemStatus === STATUSES.SOLD ? "" : "disabled"}>${STATUSES.SOLD}</option>
-              <option ${itemStatus === STATUSES.WRITTEN_OFF ? "" : "disabled"}>${STATUSES.WRITTEN_OFF}</option>
-              <option ${itemStatus === STATUSES.ARCHIVED ? "" : "disabled"}>${STATUSES.ARCHIVED}</option>
-            </select>
-          </label>
+            ${
+              editingItem
+                ? ""
+                : `
+                  <label>
+                    Status
+                    <select name="status" ${locked || soldReadOnly ? "disabled" : ""}>
+                      <option>${STATUSES.AVAILABLE}</option>
+                      <option>${STATUSES.RESERVED}</option>
+                      <option ${itemStatus === STATUSES.SOLD ? "" : "disabled"}>${STATUSES.SOLD}</option>
+                      <option ${itemStatus === STATUSES.WRITTEN_OFF ? "" : "disabled"}>${STATUSES.WRITTEN_OFF}</option>
+                      <option ${itemStatus === STATUSES.ARCHIVED ? "" : "disabled"}>${STATUSES.ARCHIVED}</option>
+                    </select>
+                  </label>
+                `
+            }
 
             <label>
               Date Added
@@ -464,7 +470,7 @@ export function bindInventoryPage(root, store, notify, refresh) {
     form.collectionId.value = editingItem.collectionId;
     form.cost.value = editingItem.cost;
     form.price.value = editingItem.price;
-    form.status.value = editingItem.status;
+    if (form.status) form.status.value = editingItem.status;
     form.createdAt.value = toDateInput(editingItem.createdAt);
     form.notes.value = editingItem.notes || "";
     const platformSelect = root.querySelector("#inventory-action-platform");

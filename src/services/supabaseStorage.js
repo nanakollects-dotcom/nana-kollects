@@ -429,6 +429,7 @@ export async function updateSupabaseInventoryItem(itemId, input) {
   const sku = String(input.sku || "").trim().toUpperCase();
   const cost = money(input.cost);
   const price = money(input.price);
+  const previousPrice = money(item.price);
   const name = String(input.name || "").trim();
   const dateAdded = input.createdAt || item.createdAt || nowIso();
   const collectionId = collectionUuidFor(store, input.collectionId);
@@ -468,18 +469,39 @@ export async function updateSupabaseInventoryItem(itemId, input) {
     .single();
 
   if (error) throw error;
+  assert(money(data.price) === price, "Inventory item price did not persist.");
 
   if (isSold) {
-    const { error: saleError } = await supabase
-      .from("sales")
-      .update({
-        sale_price: price,
-        cost_snapshot: cost,
-      })
-      .eq("id", linkedSales[0].id)
-      .eq("user_id", userId);
+    try {
+      const { data: saleData, error: saleError } = await supabase
+        .from("sales")
+        .update({
+          sale_price: price,
+          cost_snapshot: cost,
+        })
+        .eq("id", linkedSales[0].id)
+        .eq("user_id", userId)
+        .select("id, sale_price")
+        .single();
 
-    if (saleError) throw saleError;
+      if (saleError) throw saleError;
+      assert(money(saleData.sale_price) === price, "Linked sale price did not persist.");
+    } catch (error) {
+      const { data: rollbackData, error: rollbackError } = await supabase
+        .from("inventory_items")
+        .update({ price: previousPrice })
+        .eq("id", itemId)
+        .eq("user_id", userId)
+        .select("id, price")
+        .single();
+
+      if (rollbackError) {
+        throw new Error(`Linked sale price did not persist and inventory price rollback failed: ${rollbackError.message}`);
+      }
+      assert(money(rollbackData.price) === previousPrice, "Inventory price rollback did not persist.");
+
+      throw error;
+    }
   }
 
   const { error: purchaseError } = await supabase

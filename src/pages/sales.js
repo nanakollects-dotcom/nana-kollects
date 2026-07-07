@@ -96,7 +96,7 @@ function renderPlatformSales(store, filters) {
       <article class="record-card">
         <div class="record-card-head">
           <strong>${escapeText(row.platform)}</strong>
-          <span class="pill purple-pill">${row.revenueShare}% share</span>
+          <span class="pill info-pill">${row.revenueShare}% share</span>
         </div>
         <div class="record-grid">
           <div><span>Sales</span><strong>${row.orders}</strong></div>

@@ -59,7 +59,7 @@ const barWidthClass = (percent) => {
   return `bar-w-${bucket}`;
 };
 
-const platformColors = ["#e89cb5", "#7dc3dc", "#008f5a", "#f59e0b", "#ef4444", "#667085"];
+const platformColors = ["#1e3a5f", "#3b82f6", "#15803d", "#b45309", "#dc2626", "#64748b"];
 
 const activityLabel = (type) =>
   ({
@@ -91,7 +91,7 @@ const activityTone = (type) => {
   if (type === "inventory.created" || type === "sale.updated") return "activity-info";
   if (type === "inventory.written_off" || type === "inventory.deleted" || type === "expense.deleted") return "activity-danger";
   if (type === "expense.created" || type === "sale.reversed") return "activity-warn";
-  if (type === "capital.created" || type === "collection.created") return "activity-purple";
+  if (type === "capital.created" || type === "collection.created") return "activity-primary";
   if (type.startsWith("import.")) return "activity-info";
   if (type === "inventory.archived") return "activity-muted";
   return "activity-muted";

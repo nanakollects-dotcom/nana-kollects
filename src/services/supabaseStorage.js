@@ -423,7 +423,8 @@ export async function updateSupabaseInventoryItem(itemId, input) {
   const store = currentStore();
   const item = store.inventory.find((entry) => entry.id === itemId);
   assert(item, "Item not found.");
-  assert(!item.locked, "Sold or written-off items cannot be edited.");
+  const isSold = item.status === STATUSES.SOLD;
+  assert(!item.locked || isSold, "Written-off or archived items cannot be edited.");
 
   const sku = String(input.sku || "").trim().toUpperCase();
   const cost = money(input.cost);
@@ -436,12 +437,18 @@ export async function updateSupabaseInventoryItem(itemId, input) {
   assert(!(store.inventory || []).some((entry) => entry.sku === sku && entry.id !== itemId), "SKU must be unique.");
   assert(name, "Item name is required.");
   assert(cost >= 0, "Cost must be zero or higher.");
-  assert(price >= cost, "Price must be equal to or higher than cost.");
+  if (isSold) {
+    assert(price >= 0, "Sold price must be zero or higher.");
+  } else {
+    assert(price >= cost, "Price must be equal to or higher than cost.");
+  }
   assert(!Number.isNaN(new Date(dateAdded).getTime()), "Date added must be valid.");
 
   const status = input.status && [STATUSES.AVAILABLE, STATUSES.RESERVED].includes(input.status)
     ? input.status
     : item.status;
+  const linkedSales = isSold ? (store.sales || []).filter((sale) => sale.itemId === itemId) : [];
+  if (isSold) assert(linkedSales.length === 1, "Sold item has no single linked sale record to update.");
 
   const { data, error } = await supabase
     .from("inventory_items")
@@ -461,6 +468,19 @@ export async function updateSupabaseInventoryItem(itemId, input) {
     .single();
 
   if (error) throw error;
+
+  if (isSold) {
+    const { error: saleError } = await supabase
+      .from("sales")
+      .update({
+        sale_price: price,
+        cost_snapshot: cost,
+      })
+      .eq("id", linkedSales[0].id)
+      .eq("user_id", userId);
+
+    if (saleError) throw saleError;
+  }
 
   const { error: purchaseError } = await supabase
     .from("inventory_purchases")

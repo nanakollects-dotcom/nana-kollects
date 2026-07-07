@@ -38,7 +38,7 @@ const collectionOptions = (store) =>
 const statusClass = (status) => {
   if (status === STATUSES.AVAILABLE) return "green-pill";
   if (status === STATUSES.RESERVED) return "yellow-pill";
-  if (status === STATUSES.SOLD) return "purple-pill";
+  if (status === STATUSES.SOLD) return "info-pill";
   if (status === STATUSES.ARCHIVED) return "gray-pill";
   return "muted-pill";
 };
@@ -118,10 +118,12 @@ export function setInventoryViewItem(itemId) {
 
 function inventoryForm(store) {
   const editingItem = store.inventory.find((item) => item.id === editingId);
-  const locked = Boolean(editingItem?.locked);
+  const soldLocked = editingItem?.status === STATUSES.SOLD;
+  const locked = Boolean(editingItem?.locked) && !soldLocked;
+  const soldReadOnly = Boolean(editingItem?.locked) && soldLocked;
   const title = editingItem ? "Edit Item" : "Add Item";
   const collections = collectionOptions(store);
-  const canSubmit = !locked && collections.length > 0;
+  const canSubmit = (!locked || soldReadOnly) && collections.length > 0;
   const itemStatus = editingItem?.status || STATUSES.AVAILABLE;
 
   return `
@@ -143,7 +145,7 @@ function inventoryForm(store) {
     ? `
       <label>
         SKU
-        <input name="sku" required ${locked ? "disabled" : ""} />
+        <input name="sku" required ${locked || soldReadOnly ? "disabled" : ""} />
       </label>
     `
     : `
@@ -155,12 +157,12 @@ function inventoryForm(store) {
 
           <label>
             Name
-            <input name="name" required ${locked ? "disabled" : ""} />
+            <input name="name" required ${locked || soldReadOnly ? "disabled" : ""} />
           </label>
 
           <label>
             Collection
-            <select name="collectionId" required ${locked || !collections.length ? "disabled" : ""}>
+            <select name="collectionId" required ${locked || soldReadOnly || !collections.length ? "disabled" : ""}>
               <option value="">Choose collection</option>
               ${collections
                 .map((name) => `<option value="${escapeText(name)}">${escapeText(name)}</option>`)
@@ -180,7 +182,7 @@ function inventoryForm(store) {
             <div class="form-row">
               <label>
                 Cost
-                <input type="number" name="cost" min="0" step="0.01" required ${locked ? "disabled" : ""} />
+                <input type="number" name="cost" min="0" step="0.01" required ${locked || soldReadOnly ? "disabled" : ""} />
               </label>
 
               <label>
@@ -194,7 +196,7 @@ function inventoryForm(store) {
             <h3>Inventory Information</h3>
           <label>
             Status
-            <select name="status" ${locked ? "disabled" : ""}>
+            <select name="status" ${locked || soldReadOnly ? "disabled" : ""}>
               <option>${STATUSES.AVAILABLE}</option>
               <option>${STATUSES.RESERVED}</option>
               <option ${itemStatus === STATUSES.SOLD ? "" : "disabled"}>${STATUSES.SOLD}</option>
@@ -205,12 +207,12 @@ function inventoryForm(store) {
 
             <label>
               Date Added
-              <input type="date" name="createdAt" required ${locked ? "disabled" : ""} />
+              <input type="date" name="createdAt" required ${locked || soldReadOnly ? "disabled" : ""} />
             </label>
 
             <label>
               Notes
-              <textarea name="notes" rows="3" ${locked ? "disabled" : ""} placeholder="Optional item notes"></textarea>
+              <textarea name="notes" rows="3" ${locked || soldReadOnly ? "disabled" : ""} placeholder="Optional item notes"></textarea>
             </label>
           </section>
 
@@ -476,7 +478,22 @@ export function bindInventoryPage(root, store, notify, refresh) {
   if (form) {
     bindForm(form, async (data) => {
       try {
-        data.price = form.elements.price.value;
+        if (editingItem) {
+          data = {
+            id: editingItem.id,
+            sku: editingItem.sku,
+            name: editingItem.name,
+            collectionId: editingItem.collectionId,
+            cost: editingItem.cost,
+            status: editingItem.status,
+            createdAt: editingItem.createdAt,
+            notes: editingItem.notes || "",
+            ...data,
+            price: form.elements.price.value,
+          };
+        } else {
+          data.price = form.elements.price.value;
+        }
 
         if (data.id) {
           await saveSupabaseInventoryItem(data.id, data);

@@ -20,7 +20,7 @@ const collectionStatus = (collection) => {
     return { label: "At Risk", className: "yellow-pill" };
   }
   if (collection.recoveryRate < 70 || collection.itemsLeft >= 10) {
-    return { label: "Needs Attention", className: "purple-pill" };
+    return { label: "Needs Attention", className: "info-pill" };
   }
   return { label: "Healthy", className: "green-pill" };
 };

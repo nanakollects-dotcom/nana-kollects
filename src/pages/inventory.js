@@ -17,6 +17,7 @@ let searchTerm = "";
 let statusFilter = "all";
 let collectionFilter = "all";
 let ageFilter = "all";
+let inventoryDraft = null;
 
 const escapeText = (value) =>
   String(value ?? "").replace(/[&<>"']/g, (char) => ({
@@ -109,12 +110,60 @@ export function setInventoryCollectionFilter(collectionName) {
   searchTerm = "";
   statusFilter = "all";
   ageFilter = "all";
+  inventoryDraft = null;
 }
 
 export function setInventoryViewItem(itemId) {
+  inventoryDraft = null;
   editingId = itemId || null;
   isModalOpen = Boolean(itemId);
 }
+
+const readInventoryDraft = (root) => {
+  const form = root.querySelector("#inventory-form");
+  if (!form) return null;
+
+  const fieldValue = (name) => form.elements[name]?.value;
+
+  return {
+    id: fieldValue("id") || editingId || "",
+    sku: fieldValue("sku"),
+    name: fieldValue("name"),
+    collectionId: fieldValue("collectionId"),
+    cost: fieldValue("cost"),
+    price: fieldValue("price"),
+    status: fieldValue("status"),
+    createdAt: fieldValue("createdAt"),
+    notes: fieldValue("notes"),
+    platform: root.querySelector("#inventory-action-platform")?.value,
+    payment: root.querySelector("#inventory-action-payment")?.value,
+  };
+};
+
+const applyInventoryDraft = (root) => {
+  const form = root.querySelector("#inventory-form");
+  if (!form || !inventoryDraft) return;
+  if (inventoryDraft.id && inventoryDraft.id !== editingId) return;
+
+  const setField = (name, value) => {
+    if (value === undefined || !form.elements[name]) return;
+    form.elements[name].value = value;
+  };
+
+  setField("sku", inventoryDraft.sku);
+  setField("name", inventoryDraft.name);
+  setField("collectionId", inventoryDraft.collectionId);
+  setField("cost", inventoryDraft.cost);
+  setField("price", inventoryDraft.price);
+  setField("status", inventoryDraft.status);
+  setField("createdAt", inventoryDraft.createdAt);
+  setField("notes", inventoryDraft.notes);
+
+  const platformSelect = root.querySelector("#inventory-action-platform");
+  const paymentSelect = root.querySelector("#inventory-action-payment");
+  if (platformSelect && inventoryDraft.platform !== undefined) platformSelect.value = inventoryDraft.platform;
+  if (paymentSelect && inventoryDraft.payment !== undefined) paymentSelect.value = inventoryDraft.payment;
+};
 
 function inventoryForm(store) {
   const editingItem = store.inventory.find((item) => item.id === editingId);
@@ -477,6 +526,7 @@ export function bindInventoryPage(root, store, notify, refresh) {
     const paymentSelect = root.querySelector("#inventory-action-payment");
     if (platformSelect) platformSelect.value = editingItem.platform || "";
     if (paymentSelect) paymentSelect.value = editingItem.paymentStatus || PAYMENT_STATUSES.PAID;
+    applyInventoryDraft(root);
   } else if (form) {
     form.createdAt.value = toDateInput(new Date());
   }
@@ -511,6 +561,7 @@ export function bindInventoryPage(root, store, notify, refresh) {
 
         editingId = null;
         isModalOpen = false;
+        inventoryDraft = null;
         refresh();
       } catch (error) {
         notify(error.message, true);
@@ -550,18 +601,21 @@ export function bindInventoryPage(root, store, notify, refresh) {
 
     try {
       if (button.dataset.openInventory) {
+        inventoryDraft = null;
         editingId = null;
         isModalOpen = true;
         refresh();
       }
 
       if (button.dataset.closeModal) {
+        inventoryDraft = null;
         editingId = null;
         isModalOpen = false;
         refresh();
       }
 
       if (button.dataset.edit) {
+        inventoryDraft = null;
         editingId = button.dataset.edit;
         isModalOpen = true;
         refresh();
@@ -591,11 +645,13 @@ export function bindInventoryPage(root, store, notify, refresh) {
         await removeSupabaseInventoryItem(button.dataset.delete);
         editingId = null;
         isModalOpen = false;
+        inventoryDraft = null;
         notify("Item deleted.");
         refresh();
       }
 
       if (button.dataset.statusAction) {
+        inventoryDraft = readInventoryDraft(root);
         const nextStatus = button.dataset.statusAction;
         const itemId = button.dataset.itemId;
         const platform = root.querySelector("#inventory-action-platform")?.value || "";

@@ -2085,6 +2085,22 @@ td:nth-child(n + 3) {
   gap: 8px;
 }
 
+.inventory-modal-form .modal-section:nth-of-type(2) {
+  order: 3;
+}
+
+.inventory-modal-form .modal-section:nth-of-type(3) {
+  order: 2;
+}
+
+.inventory-modal-form .inventory-action-panel {
+  order: 4;
+}
+
+.inventory-modal-form .button-row {
+  order: 5;
+}
+
 .snapshot-list small {
   display: block;
   margin-top: 3px;
@@ -2435,6 +2451,8 @@ td:nth-child(n + 3) {
   .inventory-modal-form {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     align-items: start;
+    gap: 12px;
+    padding: 14px;
   }
 
   .inventory-modal-form .modal-header,
@@ -2446,21 +2464,46 @@ td:nth-child(n + 3) {
     display: none;
   }
 
-  .inventory-modal-form .modal-section:nth-of-type(1),
-  .inventory-modal-form .modal-section:nth-of-type(2) {
+  .inventory-modal-form .modal-section {
+    gap: 10px;
+    padding: 10px;
+  }
+
+  .inventory-modal-form .form-row {
+    gap: 10px;
+  }
+
+  .inventory-modal-form .modal-section:nth-of-type(1) {
     grid-column: 1;
+    order: 1;
   }
 
   .inventory-modal-form .modal-section:nth-of-type(3) {
     grid-column: 2;
+    order: 2;
+  }
+
+  .inventory-modal-form .modal-section:nth-of-type(2) {
+    grid-column: 1 / -1;
+    order: 3;
   }
 
   .inventory-modal-form .inventory-action-panel {
     grid-column: 1 / -1;
+    order: 4;
   }
 
   .inventory-modal-form .inventory-action-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .inventory-modal-form textarea[name="notes"] {
+    min-height: 74px;
+  }
+
+  .inventory-modal-form .button-row {
+    order: 5;
+    margin-top: 2px;
   }
 }
 

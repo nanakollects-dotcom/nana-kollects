@@ -6,6 +6,7 @@ import {
   getCashAvailable,
   getCOGS,
   getCollectionBusinessMetrics,
+  getCostPendingCount,
   getExpectedProfitLeft,
   getExpectedSalesLeft,
   getExpenseSummary,
@@ -24,6 +25,7 @@ export function buildFullBusinessReportRows(store, filters = {}) {
   const platforms = getPlatformRows(store, filters);
   const inventoryStatus = getInventoryStatusCounts(store.inventory);
   const recovery = getCapitalRecoverySummary(store, { startDate: null, endDate: null });
+  const costPendingCount = getCostPendingCount(store);
 
   return [
     ["Nana Kollects Full Business Report"],
@@ -38,19 +40,20 @@ export function buildFullBusinessReportRows(store, filters = {}) {
     ["Inventory Capital", getCapitalDeployed(store)],
     ["Total Inventory Cost", recovery.totalInventoryCost],
     ["Sales Collected So Far", recovery.salesCollected],
-    ["Capital Recovery Rate", `${recovery.recoveryRate}%`],
+    ["Capital Recovery Rate", recovery.recoveryRate === null ? "Partial - costs pending" : `${recovery.recoveryRate}%`],
     ["Potential Sales", getExpectedSalesLeft(store)],
     ["Expected Final Revenue", getRevenue(store, filters) + getExpectedSalesLeft(store)],
-    ["Projected Profit", getRevenue(store, filters) + getExpectedSalesLeft(store) - recovery.totalInventoryCost],
+    ["Projected Profit", costPendingCount ? "Partial - costs pending" : getRevenue(store, filters) + getExpectedSalesLeft(store) - recovery.totalInventoryCost],
     ["Expected Profit Left", getExpectedProfitLeft(store)],
     [],
     ["Sales Summary"],
     ["Sales", sales.orders],
     ["Avg Order Value", sales.averageOrderValue],
-    ["Profit Margin", `${sales.profitMargin}%`],
+    ["Profit Margin", sales.profitMargin === null ? "Partial - costs pending" : `${sales.profitMargin}%`],
     [],
     ["Inventory Summary"],
     ["Inventory Items", store.inventory.length],
+    ["Costs Pending", costPendingCount],
     ["Sales Value of Active Inventory", getExpectedSalesLeft(store)],
     ["Inventory Capital", getCapitalDeployed(store)],
     [],
@@ -78,8 +81,8 @@ export function buildFullBusinessReportRows(store, filters = {}) {
       collection.soldCount,
       collection.remainingCount,
       collection.revenue,
-      collection.profit,
-      `${Math.round(collection.roi * 10) / 10}%`,
+      collection.profit === null ? "Partial - costs pending" : collection.profit,
+      collection.roi === null ? "Partial - costs pending" : `${Math.round(collection.roi * 10) / 10}%`,
     ]),
     [],
     ["Collection Business Metrics"],

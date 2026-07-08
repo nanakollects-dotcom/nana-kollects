@@ -1,4 +1,5 @@
 import { getInventoryAgeDays, getInventoryMarginPercent, getInventoryProfitPotential } from "../core/calculations.js";
+import { isCostPending } from "../core/costs.js";
 import {
   addSupabaseInventoryItem,
   removeSupabaseInventoryItem,
@@ -17,6 +18,7 @@ let searchTerm = "";
 let statusFilter = "all";
 let collectionFilter = "all";
 let ageFilter = "all";
+let costFilter = "all";
 let inventoryDraft = null;
 
 const escapeText = (value) =>
@@ -61,6 +63,18 @@ const matchesAgeFilter = (item) => {
   if (ageFilter === "90") return days >= 90;
   return true;
 };
+
+const matchesCostFilter = (item) => {
+  if (costFilter === "pending") return isCostPending(item);
+  if (costFilter === "recorded") return !isCostPending(item);
+  return true;
+};
+
+const missingValue = "&mdash;";
+const costPendingIndicator = `<small class="cost-pending-label">Cost Pending</small>`;
+const formatCost = (item) => isCostPending(item) ? `${missingValue}${costPendingIndicator}` : formatMoney(item.cost);
+const formatOptionalMoney = (value) => value === null || value === undefined ? missingValue : formatMoney(value);
+const formatOptionalPercent = (value) => value === null || value === undefined ? missingValue : `${value.toFixed(1)}%`;
 
 const toDateInput = (value) => {
   const date = value ? new Date(value) : new Date();
@@ -110,6 +124,7 @@ export function setInventoryCollectionFilter(collectionName) {
   searchTerm = "";
   statusFilter = "all";
   ageFilter = "all";
+  costFilter = "all";
   inventoryDraft = null;
 }
 
@@ -231,7 +246,9 @@ function inventoryForm(store) {
             <div class="form-row">
               <label>
                 Cost
-                <input type="number" name="cost" min="0" step="0.01" required ${locked || soldReadOnly ? "disabled" : ""} />
+                <input type="number" name="cost" min="0" step="0.01" ${locked ? "disabled" : ""} />
+                <small class="modal-copy">Leave blank if purchase cost is not yet known.</small>
+                <small class="cost-pending-label" data-cost-pending-indicator hidden>Cost Pending</small>
               </label>
 
               <label>
@@ -344,8 +361,9 @@ function filteredInventory(store) {
       const matchesCollection =
         collectionFilter === "all" || (item.collectionId || "Unassigned") === collectionFilter;
       const matchesAge = matchesAgeFilter(item);
+      const matchesCost = matchesCostFilter(item);
 
-      return matchesSearch && matchesStatus && matchesCollection && matchesAge;
+      return matchesSearch && matchesStatus && matchesCollection && matchesAge && matchesCost;
     })
     .slice()
     .sort(sortBySkuDescending);
@@ -356,16 +374,19 @@ function renderInventoryResults(store) {
 
   const rows = visibleInventory
     .map((item) => {
+      const profitPotential = getInventoryProfitPotential(item);
+      const margin = getInventoryMarginPercent(item);
+
       return `
         <tr>
           <td><span class="mono">${escapeText(item.sku)}</span></td>
           <td><strong>${escapeText(item.name)}</strong></td>
           <td>${escapeText(item.collectionId)}</td>
-          <td class="money-cell">${formatMoney(item.cost)}</td>
+          <td class="money-cell">${formatCost(item)}</td>
           <td class="money-cell">${formatMoney(item.price)}</td>
           <td><span class="pill ${statusClass(item.status)}">${item.status}</span></td>
-          <td class="money-cell profit-cell">${formatMoney(getInventoryProfitPotential(item))}</td>
-          <td class="percent-cell">${getInventoryMarginPercent(item).toFixed(1)}%</td>
+          <td class="money-cell ${profitPotential === null ? "" : "profit-cell"}">${formatOptionalMoney(profitPotential)}</td>
+          <td class="percent-cell">${formatOptionalPercent(margin)}</td>
           <td class="${ageClass(item)}">${formatAge(item)}</td>
 
           <td class="actions-cell">
@@ -380,6 +401,9 @@ function renderInventoryResults(store) {
 
   const mobileCards = visibleInventory
     .map((item) => {
+      const profitPotential = getInventoryProfitPotential(item);
+      const margin = getInventoryMarginPercent(item);
+
       return `
         <article class="record-card">
           <div class="record-card-head">
@@ -393,10 +417,10 @@ function renderInventoryResults(store) {
 
           <div class="record-grid">
             <div><span>Collection</span><strong>${escapeText(item.collectionId)}</strong></div>
-            <div><span>Cost</span><strong>${formatMoney(item.cost)}</strong></div>
+            <div><span>Cost</span><strong>${formatCost(item)}</strong></div>
             <div><span>Price</span><strong>${formatMoney(item.price)}</strong></div>
-            <div><span>Profit Potential</span><strong class="profit-cell">${formatMoney(getInventoryProfitPotential(item))}</strong></div>
-            <div><span>Margin</span><strong>${getInventoryMarginPercent(item).toFixed(1)}%</strong></div>
+            <div><span>Profit Potential</span><strong class="${profitPotential === null ? "" : "profit-cell"}">${formatOptionalMoney(profitPotential)}</strong></div>
+            <div><span>Margin</span><strong>${formatOptionalPercent(margin)}</strong></div>
             <div><span>Age</span><strong class="${ageClass(item)}">${formatAge(item)}</strong></div>
           </div>
 
@@ -490,6 +514,15 @@ export function renderInventoryPage(store) {
       </label>
 
       <label>
+        Cost
+        <select id="inventory-cost-filter">
+          <option value="all" ${costFilter === "all" ? "selected" : ""}>All Costs</option>
+          <option value="recorded" ${costFilter === "recorded" ? "selected" : ""}>Cost Recorded</option>
+          <option value="pending" ${costFilter === "pending" ? "selected" : ""}>Cost Pending</option>
+        </select>
+      </label>
+
+      <label>
         Collection
         <select id="inventory-collection-filter">
           <option value="all">All Collections</option>
@@ -517,7 +550,7 @@ export function bindInventoryPage(root, store, notify, refresh) {
     form.sku.value = editingItem.sku;
     form.name.value = editingItem.name;
     form.collectionId.value = editingItem.collectionId;
-    form.cost.value = editingItem.cost;
+    form.cost.value = isCostPending(editingItem) ? "" : editingItem.cost;
     form.price.value = editingItem.price;
     if (form.status) form.status.value = editingItem.status;
     form.createdAt.value = toDateInput(editingItem.createdAt);
@@ -548,6 +581,7 @@ export function bindInventoryPage(root, store, notify, refresh) {
             price: form.elements.price.value,
           };
         } else {
+          data.cost = form.elements.cost.value;
           data.price = form.elements.price.value;
         }
 
@@ -592,6 +626,19 @@ export function bindInventoryPage(root, store, notify, refresh) {
     ageFilter = event.target.value;
     refresh();
   });
+
+  root.querySelector("#inventory-cost-filter")?.addEventListener("change", (event) => {
+    costFilter = event.target.value;
+    refresh();
+  });
+
+  const costInput = form?.elements.cost;
+  const costPendingIndicator = root.querySelector("[data-cost-pending-indicator]");
+  const updateCostPendingIndicator = () => {
+    if (costPendingIndicator) costPendingIndicator.hidden = String(costInput?.value || "").trim() !== "";
+  };
+  costInput?.addEventListener("input", updateCostPendingIndicator);
+  updateCostPendingIndicator();
 
   root.onclick = async (event) => {
     const button = event.target.closest("button");

@@ -325,7 +325,7 @@ function existingCollectionNames(store) {
 }
 
 function inventoryDuplicateKey(item) {
-  return `${clean(item.name).toLowerCase()}|${clean(item.collectionId).toLowerCase()}|${money(item.cost)}|${money(item.price)}`;
+  return `${clean(item.name).toLowerCase()}|${clean(item.collectionId).toLowerCase()}|${item.cost === null ? "pending" : money(item.cost)}|${money(item.price)}`;
 }
 
 function validateInventory(row, lookup, rowNumber, store, batch) {
@@ -334,7 +334,7 @@ function validateInventory(row, lookup, rowNumber, store, batch) {
   const sku = normalizeSku(readValue(row, lookup, "sku"));
   const name = readValue(row, lookup, "name");
   const collection = readValue(row, lookup, "collection");
-  const cost = parseNumberValue(readValue(row, lookup, "cost"), "Cost", errors) ?? 0;
+  const cost = parseNumberValue(readValue(row, lookup, "cost"), "Cost", errors);
   const price = parseNumberValue(readValue(row, lookup, "price"), "Price", errors) ?? 0;
   const status = normalizeStatus(readValue(row, lookup, "status"), errors);
   const dateAdded = parseDateValue(readValue(row, lookup, "dateAdded"), "Date added", errors);
@@ -346,7 +346,7 @@ function validateInventory(row, lookup, rowNumber, store, batch) {
   }
 
   if (!name) errors.push("Name is required.");
-  if (price < cost) warnings.push("Price is lower than cost.");
+  if (cost !== null && price < cost) warnings.push("Price is lower than cost.");
   if (sku && store.inventory.some((item) => item.sku === sku)) errors.push("Duplicate SKU already exists.");
   if (sku && batch.skus.has(sku)) errors.push("Duplicate SKU appears in this CSV.");
   if (sku) batch.skus.add(sku);

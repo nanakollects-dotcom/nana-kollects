@@ -69,7 +69,7 @@ export function alertList(alerts, emptyTitle, emptyDetail) {
 }
 
 export function metricGrid(metrics) {
-  return `<div class="metric-grid">${metrics.map((metric) => card(metric.label, metric.value, metric.tone || "")).join("")}</div>`;
+  return `<div class="metric-grid">${metrics.map((metric) => card(metric.label, metric.value, metric.tone || "", metric.insight || "")).join("")}</div>`;
 }
 
 export function moneyMetric(label, value, tone = "") {

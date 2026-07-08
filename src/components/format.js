@@ -7,10 +7,12 @@ export const currency = new Intl.NumberFormat("en-PH", {
 export const number = new Intl.NumberFormat("en-PH");
 
 export function formatMoney(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return "—";
   return currency.format(Number(value || 0));
 }
 
 export function formatPercent(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return "—";
   return `${Number(value || 0).toFixed(1)}%`;
 }
 

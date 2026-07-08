@@ -42,7 +42,7 @@ create table if not exists public.inventory_items (
   collection_id uuid references public.collections(id) on delete set null,
   sku text not null,
   name text not null,
-  cost numeric(12,2) not null default 0,
+  cost numeric(12,2),
   price numeric(12,2) not null default 0,
   status text not null default 'Available',
   date_added date,
@@ -76,7 +76,7 @@ create table if not exists public.sales (
   collection_id uuid references public.collections(id) on delete set null,
   sku_snapshot text,
   item_name_snapshot text,
-  cost_snapshot numeric(12,2) not null default 0,
+  cost_snapshot numeric(12,2),
   sale_price numeric(12,2) not null default 0,
   profit_snapshot numeric(12,2) generated always as (sale_price - cost_snapshot) stored,
   platform text not null,
@@ -148,7 +148,7 @@ create table if not exists public.inventory_purchases (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   inventory_item_id uuid references public.inventory_items(id) on delete set null,
-  cost numeric(12,2) not null default 0,
+  cost numeric(12,2),
   purchase_date date not null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -164,6 +164,13 @@ create table if not exists public.settings (
   updated_at timestamptz not null default now(),
   constraint settings_user_key_unique unique (user_id, key)
 );
+
+alter table public.inventory_items alter column cost drop not null;
+alter table public.inventory_items alter column cost drop default;
+alter table public.sales alter column cost_snapshot drop not null;
+alter table public.sales alter column cost_snapshot drop default;
+alter table public.inventory_purchases alter column cost drop not null;
+alter table public.inventory_purchases alter column cost drop default;
 
 drop trigger if exists set_profiles_updated_at on public.profiles;
 create trigger set_profiles_updated_at
@@ -367,4 +374,3 @@ create policy "settings_update_own" on public.settings for update using (auth.ui
 
 drop policy if exists "settings_delete_own" on public.settings;
 create policy "settings_delete_own" on public.settings for delete using (auth.uid() = user_id);
-

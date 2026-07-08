@@ -197,6 +197,9 @@ function renderImportExportPanel() {
 
 function renderRecoveryProgress(store) {
   const recovery = getCapitalRecoverySummary(store, { startDate: null, endDate: null });
+  const partialInsight = recovery.costPendingCount
+    ? `Partial · ${recovery.costPendingCount} cost${recovery.costPendingCount === 1 ? "" : "s"} pending`
+    : "";
 
   return `
     <section class="panel activity-panel">
@@ -204,10 +207,10 @@ function renderRecoveryProgress(store) {
         <h2>Capital Recovery Progress</h2>
       </div>
       ${metricGrid([
-        moneyMetric("Total Inventory Cost", recovery.totalInventoryCost, "focus"),
+        { ...moneyMetric("Total Inventory Cost", recovery.totalInventoryCost, "focus"), insight: partialInsight },
         moneyMetric("Cash Recovered", recovery.salesCollected, "good"),
-        percentMetric("Recovery Rate", recovery.recoveryRate, "focus"),
-        moneyMetric("Still To Recover", recovery.remainingCostToRecover, recovery.remainingCostToRecover ? "warn" : "good"),
+        { ...percentMetric("Recovery Rate", recovery.recoveryRate, recovery.costPendingCount ? "warn" : "focus"), insight: partialInsight },
+        { ...moneyMetric("Still To Recover", recovery.remainingCostToRecover, recovery.costPendingCount || recovery.remainingCostToRecover ? "warn" : "good"), insight: partialInsight },
       ])}
     </section>
   `;
@@ -221,7 +224,7 @@ function renderOverviewPanel(store, filters, status, profit) {
           <span>Current Cash</span>
           <strong>${formatMoney(getCashAvailable(store))}</strong>
         </button>
-        <button class="overview-money ${profit >= 0 ? "positive" : "negative"}" type="button" data-card-page="sales">
+        <button class="overview-money ${profit === null ? "" : profit >= 0 ? "positive" : "negative"}" type="button" data-card-page="sales">
           <span>Profit</span>
           <strong>${formatMoney(profit)}</strong>
         </button>
@@ -408,6 +411,10 @@ function renderMonthlyPerformance(performance) {
     performance.profit ||
     performance.salesRecordsCount;
 
+  const partialInsight = performance.costPendingCount
+    ? `Partial · ${performance.costPendingCount} cost${performance.costPendingCount === 1 ? "" : "s"} pending`
+    : "";
+
   return `
     <section class="panel activity-panel">
       <div class="panel-heading">
@@ -418,10 +425,10 @@ function renderMonthlyPerformance(performance) {
         hasData
           ? metricGrid([
               moneyMetric("Sales Collected", performance.revenue, "good"),
-              moneyMetric("COGS", performance.cogs),
+              { ...moneyMetric("COGS", performance.cogs), insight: partialInsight },
               moneyMetric("Expenses", performance.expenses, "warn"),
-              moneyMetric("Profit", performance.profit, performance.profit >= 0 ? "good" : "danger"),
-              percentMetric("ROI", performance.roi, "focus"),
+              { ...moneyMetric("Profit", performance.profit, performance.profit === null ? "warn" : performance.profit >= 0 ? "good" : "danger"), insight: partialInsight },
+              { ...percentMetric("ROI", performance.roi, performance.roi === null ? "warn" : "focus"), insight: partialInsight },
               countMetric("Sales", performance.salesRecordsCount),
             ])
           : `<div class="empty-state"><strong>No performance data for this period yet.</strong><span>Add sales or expenses to see this period's results.</span></div>`
@@ -432,6 +439,10 @@ function renderMonthlyPerformance(performance) {
 
 function renderBusinessSnapshot(store, filters) {
   const statusCounts = getInventoryStatusCounts(store.inventory);
+  const recovery = getCapitalRecoverySummary(store, { startDate: null, endDate: null });
+  const partialNote = recovery.costPendingCount
+    ? `<small>Partial · ${recovery.costPendingCount} cost${recovery.costPendingCount === 1 ? "" : "s"} pending</small>`
+    : "";
 
   return `
     <section class="analytics-snapshot-grid">
@@ -441,9 +452,9 @@ function renderBusinessSnapshot(store, filters) {
         </div>
         <div class="snapshot-list">
           <div><span>Capital Added</span><strong>${formatMoney(getCapitalAdded(store))}</strong></div>
-          <div><span>COGS</span><strong>${formatMoney(getCOGS(store, filters))}</strong></div>
+          <div><span>COGS</span><strong>${formatMoney(getCOGS(store, filters))}</strong>${partialNote}</div>
           <div><span>Sales Value of Active Inventory</span><strong>${formatMoney(getExpectedSalesLeft(store))}</strong></div>
-          <div><span>Inventory Capital</span><strong>${formatMoney(getCapitalDeployed(store))}</strong></div>
+          <div><span>Inventory Capital</span><strong>${formatMoney(getCapitalDeployed(store))}</strong>${partialNote}</div>
         </div>
       </section>
 

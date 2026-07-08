@@ -1,4 +1,5 @@
 import { IMPORT_LABELS, IMPORT_TYPES, templateRows } from "../core/imports.js";
+import { normalizeCostInput } from "../core/costs.js";
 import {
   addSupabaseCapitalEntry,
   addSupabaseCollection,
@@ -66,7 +67,7 @@ async function importInventory(rows) {
     await addSupabaseInventoryItem({
       sku: row.data.sku || "",
       name: row.data.name,
-      cost: money(row.data.cost),
+      cost: normalizeCostInput(row.data.cost),
       price: money(row.data.price),
       collectionId,
       createdAt: row.data.dateAdded || new Date().toISOString(),
@@ -129,7 +130,7 @@ async function importSales(rows) {
 
     if (!item || item.status === STATUSES.SOLD || store.sales.some((sale) => sale.itemId === item.id)) continue;
 
-    const cost = row.data.cost === null ? money(item.cost) : money(row.data.cost);
+    const cost = row.data.cost === null ? normalizeCostInput(item.cost) : normalizeCostInput(row.data.cost);
     const price = money(row.data.salePrice);
     const saleDate = row.data.saleDate || new Date().toISOString();
     const paymentStatus = row.data.paymentStatus || PAYMENT_STATUSES.PAID;

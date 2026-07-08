@@ -1,4 +1,5 @@
 import { getPlatformRows, getSalesSummary } from "../core/financials.js";
+import { isCostPending } from "../core/costs.js";
 import { isWithinRange } from "../core/filters.js";
 import { PAYMENT_STATUSES, PLATFORMS, saveSupabaseSale } from "../services/repository.js";
 import { bindForm, countMetric, emptyState, metricGrid, modal, moneyMetric, pageHeader } from "../components/ui.js";
@@ -18,10 +19,14 @@ const escapeText = (value) =>
   })[char]);
 
 const profitClass = (profit) => {
+  if (profit === null || profit === undefined) return "profit-neutral";
   if (Number(profit) > 0) return "profit-cell";
   if (Number(profit) < 0) return "profit-loss";
   return "profit-neutral";
 };
+const formatSaleCost = (sale) => isCostPending(sale) ? "—" : formatMoney(sale.cost);
+const formatSaleProfit = (sale) => isCostPending(sale) || sale.profit === null ? "Pending Cost" : formatMoney(sale.profit);
+const formatSummaryProfit = (value) => value === null || value === undefined ? "—" : formatMoney(value);
 const todayDateInput = () => new Date().toISOString().slice(0, 10);
 
 function saleEditForm(store) {
@@ -43,7 +48,7 @@ function saleEditForm(store) {
         </label>
 
         <label>Cost / Capital
-          <input type="number" name="cost" min="0" step="0.01" required value="${sale?.cost || 0}" />
+          <input type="number" name="cost" min="0" step="0.01" value="${isCostPending(sale) ? "" : sale?.cost || 0}" />
         </label>
 
         <label>Date Sold
@@ -86,7 +91,7 @@ function renderPlatformSales(store, filters) {
         <td><strong>${escapeText(row.platform)}</strong></td>
         <td>${row.orders}</td>
         <td>${formatMoney(row.revenue)}</td>
-        <td class="profit-cell">${formatMoney(row.profit)}</td>
+        <td class="${row.profit === null ? "" : "profit-cell"}">${formatSummaryProfit(row.profit)}</td>
         <td>${row.revenueShare}%</td>
       </tr>
     `)
@@ -101,7 +106,7 @@ function renderPlatformSales(store, filters) {
         <div class="record-grid">
           <div><span>Sales</span><strong>${row.orders}</strong></div>
           <div><span>Sales Collected</span><strong>${formatMoney(row.revenue)}</strong></div>
-          <div><span>Profit</span><strong class="profit-cell">${formatMoney(row.profit)}</strong></div>
+          <div><span>Profit</span><strong class="${row.profit === null ? "" : "profit-cell"}">${formatSummaryProfit(row.profit)}</strong></div>
         </div>
       </article>
     `)
@@ -135,11 +140,11 @@ export function renderSalesPage(store, filters = {}) {
         <tr>
           <td><strong>${escapeText(sale.itemName)}</strong><span>${escapeText(sale.sku)}</span></td>
           <td>${formatMoney(sale.price)}</td>
-          <td>${formatMoney(sale.cost)}</td>
+          <td>${formatSaleCost(sale)}</td>
           <td>${formatDate(sale.date)}</td>
           <td><span class="pill muted-pill">${escapeText(sale.platform || "-")}</span></td>
           <td><span class="pill">${escapeText(sale.paymentStatus)}</span></td>
-          <td class="profit-cell">${formatMoney(sale.profit)}</td>
+          <td class="${profitClass(sale.profit)}">${formatSaleProfit(sale)}</td>
           <td><button class="table-action" data-edit-sale="${sale.id}">Edit</button></td>
         </tr>
       `,
@@ -155,12 +160,12 @@ export function renderSalesPage(store, filters = {}) {
               <strong>${escapeText(sale.itemName)}</strong>
               <span>${escapeText(sale.sku)}</span>
             </div>
-            <strong class="sales-profit ${profitClass(sale.profit)}">${Number(sale.profit) > 0 ? "+" : ""}${formatMoney(sale.profit)} Profit</strong>
+            <strong class="sales-profit ${profitClass(sale.profit)}">${isCostPending(sale) || sale.profit === null ? "Pending Cost" : `${Number(sale.profit) > 0 ? "+" : ""}${formatMoney(sale.profit)} Profit`}</strong>
           </div>
 
           <div class="record-grid">
             <div><span>Sold Price</span><strong>${formatMoney(sale.price)}</strong></div>
-            <div><span>Cost</span><strong>${formatMoney(sale.cost)}</strong></div>
+            <div><span>Cost</span><strong>${formatSaleCost(sale)}</strong></div>
             <div><span>Date</span><strong>${formatDate(sale.date)}</strong></div>
             <div><span>Platform</span><strong>${escapeText(sale.platform || "-")}</strong></div>
             <div><span>Payment</span><strong>${escapeText(sale.paymentStatus)}</strong></div>
@@ -179,7 +184,7 @@ export function renderSalesPage(store, filters = {}) {
 
     ${metricGrid([
       moneyMetric("Sales Collected", summary.revenue, "good"),
-      moneyMetric("Profit", summary.profit, summary.profit >= 0 ? "good" : "danger"),
+      moneyMetric("Profit", summary.profit, summary.profit === null ? "warn" : summary.profit >= 0 ? "good" : "danger"),
       countMetric("Sales", summary.orders),
       moneyMetric("Average Order Value", summary.averageOrderValue, "focus"),
     ])}

@@ -1,5 +1,6 @@
 import { supabase } from "./supabaseClient.js";
 import { emptyStore, loadStore, normalizeStore } from "./storage.js";
+import { hasKnownCost, normalizeCostInput } from "../core/costs.js";
 
 const STATUSES = {
   AVAILABLE: "Available",
@@ -55,6 +56,10 @@ function nowIso() {
 
 function money(value) {
   return Math.round(Number(value || 0) * 100) / 100;
+}
+
+function costMoney(value) {
+  return normalizeCostInput(value);
 }
 
 function formatLogMoney(value) {
@@ -183,7 +188,7 @@ export async function loadSupabaseStore() {
       id: item.id,
       sku: item.sku,
       name: item.name,
-      cost: Number(item.cost || 0),
+      cost: costMoney(item.cost),
       price: Number(item.price || 0),
       status: item.status,
       collectionId: toAppCollectionId(item.collection_id),
@@ -203,9 +208,9 @@ export async function loadSupabaseStore() {
       collectionId: toAppCollectionId(sale.collection_id),
       sku: sale.sku_snapshot,
       itemName: sale.item_name_snapshot,
-      cost: Number(sale.cost_snapshot || 0),
+      cost: costMoney(sale.cost_snapshot),
       price: Number(sale.sale_price || 0),
-      profit: Number(sale.profit_snapshot || 0),
+      profit: hasKnownCost(sale.profit_snapshot) ? Number(sale.profit_snapshot) : null,
       platform: sale.platform,
       paymentStatus: sale.payment_status,
       date: sale.sale_date,
@@ -241,7 +246,7 @@ export async function loadSupabaseStore() {
     purchases: (purchasesResult.data || []).map((purchase) => ({
       id: purchase.id,
       itemId: purchase.inventory_item_id,
-      cost: Number(purchase.cost || 0),
+      cost: costMoney(purchase.cost),
       date: purchase.purchase_date,
       createdAt: purchase.created_at,
       updatedAt: purchase.updated_at,
@@ -365,7 +370,7 @@ export async function createSupabaseInventoryItem(input) {
   const store = currentStore();
   const requestedSku = String(input.sku || "").trim().toUpperCase();
   const sku = requestedSku || nextSku(store);
-  const cost = money(input.cost);
+  const cost = costMoney(input.cost);
   const price = money(input.price);
   const name = String(input.name || "").trim();
   const dateAdded = input.createdAt || input.dateAdded || nowIso();
@@ -373,8 +378,8 @@ export async function createSupabaseInventoryItem(input) {
 
   assert(name, "Item name is required.");
   assert(!(store.inventory || []).some((entry) => entry.sku === sku), "SKU must be unique.");
-  assert(cost >= 0, "Cost must be zero or higher.");
-  assert(price >= cost, "Price must be equal to or higher than cost.");
+  assert(cost === null || cost >= 0, "Cost must be zero or higher.");
+  if (cost !== null) assert(price >= cost, "Price must be equal to or higher than cost.");
   assert(!Number.isNaN(new Date(dateAdded).getTime()), "Date added must be valid.");
 
   const { data: item, error } = await supabase
@@ -427,9 +432,10 @@ export async function updateSupabaseInventoryItem(itemId, input) {
   assert(!item.locked || isSold, "Written-off or archived items cannot be edited.");
 
   const sku = String(input.sku || "").trim().toUpperCase();
-  const cost = money(input.cost);
+  const cost = costMoney(input.cost);
   const price = money(input.price);
   const previousPrice = money(item.price);
+  const previousCost = costMoney(item.cost);
   const name = String(input.name || "").trim();
   const dateAdded = input.createdAt || item.createdAt || nowIso();
   const collectionId = collectionUuidFor(store, input.collectionId);
@@ -437,11 +443,11 @@ export async function updateSupabaseInventoryItem(itemId, input) {
   assert(sku, "SKU is required.");
   assert(!(store.inventory || []).some((entry) => entry.sku === sku && entry.id !== itemId), "SKU must be unique.");
   assert(name, "Item name is required.");
-  assert(cost >= 0, "Cost must be zero or higher.");
+  assert(cost === null || cost >= 0, "Cost must be zero or higher.");
   if (isSold) {
     assert(price >= 0, "Sold price must be zero or higher.");
   } else {
-    assert(price >= cost, "Price must be equal to or higher than cost.");
+    if (cost !== null) assert(price >= cost, "Price must be equal to or higher than cost.");
   }
   assert(!Number.isNaN(new Date(dateAdded).getTime()), "Date added must be valid.");
 
@@ -489,16 +495,17 @@ export async function updateSupabaseInventoryItem(itemId, input) {
     } catch (error) {
       const { data: rollbackData, error: rollbackError } = await supabase
         .from("inventory_items")
-        .update({ price: previousPrice })
+        .update({ price: previousPrice, cost: previousCost })
         .eq("id", itemId)
         .eq("user_id", userId)
-        .select("id, price")
+        .select("id, price, cost")
         .single();
 
       if (rollbackError) {
         throw new Error(`Linked sale price did not persist and inventory price rollback failed: ${rollbackError.message}`);
       }
       assert(money(rollbackData.price) === previousPrice, "Inventory price rollback did not persist.");
+      assert(costMoney(rollbackData.cost) === previousCost, "Inventory cost rollback did not persist.");
 
       throw error;
     }
@@ -638,7 +645,7 @@ export async function changeSupabaseInventoryStatus(itemId, nextStatus, paymentS
         collection_id: collectionId,
         sku_snapshot: item.sku,
         item_name_snapshot: item.name,
-        cost_snapshot: item.cost,
+        cost_snapshot: costMoney(item.cost),
         sale_price: item.price,
         platform,
         payment_status: paymentStatus,
@@ -662,6 +669,7 @@ export async function changeSupabaseInventoryStatus(itemId, nextStatus, paymentS
   }
 
   if (nextStatus === STATUSES.WRITTEN_OFF) {
+    assert(hasKnownCost(item.cost), "Record the item cost before writing it off.");
     const writtenOffAt = nowIso();
     const { data, error } = await supabase
       .from("inventory_items")
@@ -682,7 +690,7 @@ export async function changeSupabaseInventoryStatus(itemId, nextStatus, paymentS
       inventory_item_id: item.id,
       collection_id: collectionId,
       category: "Write-Off",
-      amount: item.cost,
+      amount: costMoney(item.cost),
       details: `${item.sku} - ${item.name}`,
       sku_snapshot: item.sku,
       item_name_snapshot: item.name,
@@ -697,7 +705,7 @@ export async function changeSupabaseInventoryStatus(itemId, nextStatus, paymentS
       action: "inventory.written_off",
       label: `Wrote off ${item.sku} - ${item.name}`,
       details: `Wrote off ${item.sku} - ${item.name}`,
-      amount: item.cost,
+      amount: costMoney(item.cost),
     });
 
     return data;
@@ -773,9 +781,9 @@ export async function updateSupabaseSale(saleId, input) {
   assert(item, "Inventory item not found.");
 
   const price = money(input.price);
-  const cost = money(input.cost);
+  const cost = costMoney(input.cost);
   assert(price >= 0, "Sold price must be zero or higher.");
-  assert(cost >= 0, "Cost must be zero or higher.");
+  assert(cost === null || cost >= 0, "Cost must be zero or higher.");
   assert(input.date, "Date is required.");
   assert(PLATFORMS.includes(input.platform), "Choose a valid platform.");
   assert(Object.values(PAYMENT_STATUSES).includes(input.paymentStatus), "Choose a valid payment status.");
@@ -1058,7 +1066,7 @@ export async function replaceSupabaseStoreFromBackup(rawStore) {
         collection_id: collectionIds.get(item.collectionId) || null,
         sku,
         name,
-        cost: money(item.cost),
+        cost: costMoney(item.cost),
         price: money(item.price),
         status: item.status || STATUSES.AVAILABLE,
         date_added: toDateOnly(item.createdAt || nowIso()),
@@ -1084,7 +1092,7 @@ export async function replaceSupabaseStoreFromBackup(rawStore) {
     const { error } = await supabase.from("inventory_purchases").insert({
       user_id: userId,
       inventory_item_id: itemId,
-      cost: money(purchase.cost),
+      cost: costMoney(purchase.cost),
       purchase_date: toDateOnly(purchase.date || purchase.createdAt || nowIso()),
     });
 
@@ -1099,7 +1107,7 @@ export async function replaceSupabaseStoreFromBackup(rawStore) {
       collection_id: collectionIds.get(sale.collectionId) || null,
       sku_snapshot: sale.sku || "",
       item_name_snapshot: sale.itemName || "",
-      cost_snapshot: money(sale.cost),
+      cost_snapshot: costMoney(sale.cost),
       sale_price: money(sale.price),
       platform: sale.platform || "Other",
       payment_status: sale.paymentStatus || PAYMENT_STATUSES.PAID,

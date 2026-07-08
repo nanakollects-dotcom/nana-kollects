@@ -15,6 +15,7 @@ const escapeText = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => 
 })[char]);
 const toDateInput = (value) => new Date(value).toISOString().slice(0, 10);
 const todayDateInput = () => new Date().toISOString().slice(0, 10);
+const profitClass = (value) => value === null || value === undefined ? "" : value >= 0 ? "profit-cell" : "profit-loss";
 const logicalCollectionNumber = (name) => {
   const match = String(name || "").match(/\d+/);
   return match ? Number(match[0]) : 0;
@@ -57,6 +58,10 @@ export function renderCollectionsPage(store, filters) {
   const collections = getCollectionBusinessMetrics(store, filters).slice().sort(sortNewestCollectionFirst);
   const cards = collections
     .map((collection) => {
+      const partialNote = collection.costPendingCount
+        ? `<small class="cost-pending-label">Partial · ${collection.costPendingCount} cost${collection.costPendingCount === 1 ? "" : "s"} pending</small>`
+        : "";
+
       return `
         <article class="collection-card">
           <div class="collection-card-header">
@@ -70,17 +75,19 @@ export function renderCollectionsPage(store, filters) {
           <div class="collection-hero-stats">
             <div>
               <span>Profit Collected</span>
-              <strong class="${collection.recordedProfit >= 0 ? "profit-cell" : "profit-loss"}">${formatMoney(collection.recordedProfit)}</strong>
+              <strong class="${profitClass(collection.recordedProfit)}">${formatMoney(collection.recordedProfit)}</strong>
+              ${collection.soldCostPendingCount ? `<small class="cost-pending-label">Partial · ${collection.soldCostPendingCount} sold cost${collection.soldCostPendingCount === 1 ? "" : "s"} pending</small>` : ""}
             </div>
             <div>
               <span>Projected Profit</span>
-              <strong class="${collection.expectedGrossProfit >= 0 ? "profit-cell" : "profit-loss"}">${formatMoney(collection.expectedGrossProfit)}</strong>
+              <strong class="${profitClass(collection.expectedGrossProfit)}">${formatMoney(collection.expectedGrossProfit)}</strong>
+              ${partialNote}
             </div>
           </div>
 
           <div class="collection-money-grid">
             <div><span>Sales Collected</span><strong class="profit-cell">${formatMoney(collection.salesCollected)}</strong></div>
-            <div><span>Capital Spent</span><strong>${formatMoney(collection.totalInventoryCost)}</strong></div>
+            <div><span>Capital Spent</span><strong>${formatMoney(collection.totalInventoryCost)}</strong>${partialNote}</div>
             <div><span>Inventory Left Value</span><strong>${formatMoney(collection.inventoryLeftValue)}</strong></div>
             <div><span>Expected Revenue</span><strong>${formatMoney(collection.expectedFinalRevenue)}</strong></div>
           </div>

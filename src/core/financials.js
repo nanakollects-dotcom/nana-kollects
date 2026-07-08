@@ -1,8 +1,10 @@
 import { CAPITAL_TYPES, PAYMENT_STATUSES, STATUSES } from "../services/repository.js";
 import { getCash, getSlowMovingInventory } from "./calculations.js";
+import { countPendingCosts, hasKnownCost, knownCostOrZero } from "./costs.js";
 import { isWithinRange } from "./filters.js";
 
 const toMoney = (value) => Math.round(Number(value || 0) * 100) / 100;
+const sortMetric = (value) => value === null || value === undefined ? Number.NEGATIVE_INFINITY : Number(value);
 const inRange = (items, filters = {}) =>
   items.filter((item) => isWithinRange(item.date || item.createdAt || item.soldAt, filters));
 const activeInventory = (item) => item.status === STATUSES.AVAILABLE || item.status === STATUSES.RESERVED;
@@ -17,15 +19,16 @@ const ageInDays = (value, asOf = new Date()) => {
 };
 
 export function getCollectionHealth(collection, asOf = new Date()) {
+  const costPendingCount = Number(collection.costPendingCount || 0);
   const capitalSpent = Number(collection.capitalSpent ?? collection.totalInventoryCost ?? 0);
   const salesCollected = Number(collection.salesCollected || 0);
   const soldItems = Number(collection.soldStock ?? collection.soldCount ?? 0);
   const totalItems = Number(collection.itemsCount ?? soldItems + Number(collection.itemsLeft ?? collection.remainingCount ?? 0));
-  const capitalRecovery = capitalSpent > 0 ? toMoney((salesCollected / capitalSpent) * 100) : 0;
+  const capitalRecovery = costPendingCount ? null : capitalSpent > 0 ? toMoney((salesCollected / capitalSpent) * 100) : 0;
   const sellThrough = totalItems > 0 ? toMoney((soldItems / totalItems) * 100) : 0;
   const ageDays = ageInDays(collection.createdAt, asOf);
 
-  if (capitalRecovery >= 100 || (capitalRecovery >= 70 && sellThrough >= 50)) {
+  if (capitalRecovery !== null && (capitalRecovery >= 100 || (capitalRecovery >= 70 && sellThrough >= 50))) {
     return {
       label: "Healthy",
       tone: "good",
@@ -37,8 +40,11 @@ export function getCollectionHealth(collection, asOf = new Date()) {
   }
 
   if (
-    (ageDays >= 30 && capitalRecovery < 50 && sellThrough < 30) ||
-    (ageDays >= 45 && capitalRecovery < 70 && sellThrough < 40)
+    capitalRecovery !== null &&
+    (
+      (ageDays >= 30 && capitalRecovery < 50 && sellThrough < 30) ||
+      (ageDays >= 45 && capitalRecovery < 70 && sellThrough < 40)
+    )
   ) {
     return {
       label: "At Risk",
@@ -57,6 +63,8 @@ export function getCollectionHealth(collection, asOf = new Date()) {
     capitalRecovery,
     sellThrough,
     ageDays,
+    costPendingCount,
+    partial: costPendingCount > 0,
   };
 }
 
@@ -65,10 +73,11 @@ export function getRevenue(store, filters = {}) {
 }
 
 export function getCOGS(store, filters = {}) {
-  return toMoney(inRange(store.sales, filters).reduce((sum, sale) => sum + Number(sale.cost || 0), 0));
+  return toMoney(inRange(store.sales, filters).reduce((sum, sale) => sum + knownCostOrZero(sale.cost), 0));
 }
 
 export function getGrossProfit(store, filters = {}) {
+  if (getSalesCostPendingCount(store, filters)) return null;
   return toMoney(getRevenue(store, filters) - getCOGS(store, filters));
 }
 
@@ -84,7 +93,7 @@ export function getInventoryValue(store) {
   return toMoney(
     store.inventory
       .filter((item) => item.status === STATUSES.AVAILABLE || item.status === STATUSES.RESERVED)
-      .reduce((sum, item) => sum + Number(item.cost || 0), 0),
+      .reduce((sum, item) => sum + knownCostOrZero(item.cost), 0),
   );
 }
 
@@ -99,7 +108,7 @@ export function getCapitalInInventory(store) {
 export function getTotalInventoryCost(store) {
   return toMoney(
     store.inventory
-      .reduce((sum, item) => sum + Number(item.cost || 0), 0),
+      .reduce((sum, item) => sum + knownCostOrZero(item.cost), 0),
   );
 }
 
@@ -123,20 +132,31 @@ export function getExpectedProfitLeft(store) {
   return toMoney(
     store.inventory
       .filter(activeInventory)
-      .reduce((sum, item) => sum + Number(item.price || 0) - Number(item.cost || 0), 0),
+      .filter((item) => hasKnownCost(item.cost))
+      .reduce((sum, item) => sum + Number(item.price || 0) - knownCostOrZero(item.cost), 0),
   );
 }
 
+export function getCostPendingCount(store) {
+  return countPendingCosts(store.inventory);
+}
+
+export function getSalesCostPendingCount(store, filters = {}) {
+  return countPendingCosts(inRange(store.sales, filters));
+}
+
 export function getCapitalRecoverySummary(store, filters = {}) {
+  const costPendingCount = getCostPendingCount(store);
   const totalInventoryCost = getTotalInventoryCost(store);
   const salesCollected = getSalesCollected(store, filters);
-  const recoveryRate = totalInventoryCost ? toMoney((salesCollected / totalInventoryCost) * 100) : 0;
+  const recoveryRate = costPendingCount ? null : totalInventoryCost ? toMoney((salesCollected / totalInventoryCost) * 100) : 0;
 
   return {
     totalInventoryCost,
     salesCollected,
     recoveryRate,
-    remainingCostToRecover: toMoney(Math.max(totalInventoryCost - salesCollected, 0)),
+    remainingCostToRecover: costPendingCount ? null : toMoney(Math.max(totalInventoryCost - salesCollected, 0)),
+    costPendingCount,
   };
 }
 
@@ -166,8 +186,10 @@ export function getCurrentCapital(store) {
 
 export function getROI(store, filters = {}) {
   const capital = getCapitalAdded(store);
+  const profit = getGrossProfit(store, filters);
   if (!capital) return 0;
-  return toMoney((getGrossProfit(store, filters) / capital) * 100);
+  if (profit === null) return null;
+  return toMoney((profit / capital) * 100);
 }
 
 export function getAvailableItemsCount(store) {
@@ -199,12 +221,18 @@ export function getPlatformStats(store, filters = {}) {
         orders: 0,
         revenue: 0,
         profit: 0,
+        costPendingCount: 0,
       };
     }
 
     acc[platform].orders += 1;
     acc[platform].revenue = toMoney(acc[platform].revenue + Number(sale.price || 0));
-    acc[platform].profit = toMoney(acc[platform].profit + Number(sale.profit || 0));
+    if (hasKnownCost(sale.cost) && sale.profit !== null && sale.profit !== undefined && acc[platform].costPendingCount === 0) {
+      acc[platform].profit = toMoney(acc[platform].profit + Number(sale.profit || 0));
+    } else {
+      acc[platform].costPendingCount += 1;
+      acc[platform].profit = null;
+    }
 
     return acc;
   }, {});
@@ -224,8 +252,9 @@ export function getBestPlatform(store, filters = {}) {
     revenue: data.revenue,
     profit: data.profit,
     orders: data.orders,
+    costPendingCount: data.costPendingCount,
     revenueShare: totalRevenue ? toMoney((data.revenue / totalRevenue) * 100) : 0,
-    averageProfitPerSale: data.orders ? toMoney(data.profit / data.orders) : 0,
+    averageProfitPerSale: data.orders && data.profit !== null ? toMoney(data.profit / data.orders) : null,
   };
 }
 
@@ -238,7 +267,7 @@ export function getPlatformRows(store, filters = {}) {
       platform,
       ...data,
       revenueShare: totalRevenue ? toMoney((data.revenue / totalRevenue) * 100) : 0,
-      averageProfitPerSale: data.orders ? toMoney(data.profit / data.orders) : 0,
+      averageProfitPerSale: data.orders && data.profit !== null ? toMoney(data.profit / data.orders) : null,
     }))
     .sort((a, b) => b.revenue - a.revenue);
 }
@@ -264,13 +293,17 @@ export function getCollectionBusinessMetrics(store, filters = {}) {
         .filter((sale) => sale.paymentStatus === PAYMENT_STATUSES.PAID)
         .reduce((sum, sale) => sum + Number(sale.price || 0), 0),
     );
-    const recordedCost = toMoney(sales.reduce((sum, sale) => sum + Number(sale.cost || 0), 0));
-    const totalInventoryCost = toMoney(countedItems.reduce((sum, item) => sum + Number(item.cost || 0), 0));
+    const costPendingCount = countPendingCosts(countedItems);
+    const soldCostPendingCount = countPendingCosts(sales);
+    const recordedCost = toMoney(sales.reduce((sum, sale) => sum + knownCostOrZero(sale.cost), 0));
+    const totalInventoryCost = toMoney(countedItems.reduce((sum, item) => sum + knownCostOrZero(item.cost), 0));
     const inventoryLeftValue = toMoney(activeItems.reduce((sum, item) => sum + Number(item.price || 0), 0));
-    const inventoryCostLeft = toMoney(activeItems.reduce((sum, item) => sum + Number(item.cost || 0), 0));
-    const expectedProfitLeft = toMoney(activeItems.reduce((sum, item) => sum + Number(item.price || 0) - Number(item.cost || 0), 0));
+    const inventoryCostLeft = toMoney(activeItems.reduce((sum, item) => sum + knownCostOrZero(item.cost), 0));
+    const expectedProfitLeft = toMoney(activeItems
+      .filter((item) => hasKnownCost(item.cost))
+      .reduce((sum, item) => sum + Number(item.price || 0) - knownCostOrZero(item.cost), 0));
     const expectedFinalRevenue = toMoney(recordedRevenue + inventoryLeftValue);
-    const expectedGrossProfit = toMoney(expectedFinalRevenue - totalInventoryCost);
+    const expectedGrossProfit = costPendingCount ? null : toMoney(expectedFinalRevenue - totalInventoryCost);
     const soldStock = countedItems.filter((item) => item.status === STATUSES.SOLD).length;
     const itemsLeft = activeItems.length;
     const sellThroughBase = soldStock + itemsLeft;
@@ -289,15 +322,17 @@ export function getCollectionBusinessMetrics(store, filters = {}) {
       capitalSpent: totalInventoryCost,
       salesCollected,
       recordedRevenue,
-      recordedProfit: toMoney(recordedRevenue - recordedCost),
+      recordedProfit: soldCostPendingCount ? null : toMoney(recordedRevenue - recordedCost),
       inventoryLeftValue,
       inventoryCostLeft,
       expectedSalesLeft: inventoryLeftValue,
       expectedProfitLeft,
       expectedFinalRevenue,
       expectedGrossProfit,
-      recoveryRate: totalInventoryCost ? toMoney((salesCollected / totalInventoryCost) * 100) : 0,
-      remainingCostToRecover: toMoney(Math.max(totalInventoryCost - salesCollected, 0)),
+      costPendingCount,
+      soldCostPendingCount,
+      recoveryRate: costPendingCount ? null : totalInventoryCost ? toMoney((salesCollected / totalInventoryCost) * 100) : 0,
+      remainingCostToRecover: costPendingCount ? null : toMoney(Math.max(totalInventoryCost - salesCollected, 0)),
       soldStock,
       soldCount: soldStock,
       itemsLeft,
@@ -321,8 +356,8 @@ export function getCollectionRankings(store, filters = {}) {
   return getCollectionBusinessMetrics(store, filters)
     .filter((collection) => collection.itemsCount > 0)
     .sort((a, b) => {
-      if (b.recoveryRate !== a.recoveryRate) return b.recoveryRate - a.recoveryRate;
-      return b.expectedGrossProfit - a.expectedGrossProfit;
+      if (b.recoveryRate !== a.recoveryRate) return sortMetric(b.recoveryRate) - sortMetric(a.recoveryRate);
+      return sortMetric(b.expectedGrossProfit) - sortMetric(a.expectedGrossProfit);
     });
 }
 
@@ -339,7 +374,7 @@ export function getAttentionNeeded(store, filters = {}) {
       });
       return;
     }
-    if (collection.recoveryRate < 50 && collection.remainingCostToRecover > 0) {
+    if (collection.recoveryRate !== null && collection.recoveryRate < 50 && collection.remainingCostToRecover > 0) {
       alerts.push({
         tone: "warn",
         message: `${collection.name} recovery is still low at ${collection.recoveryRate}%. Focus on selling remaining inventory before buying another collection.`,
@@ -363,8 +398,9 @@ export function getBusinessStatus(store, filters = {}) {
   const capital = getCapitalAdded(store);
   const itemsLeft = store.inventory.filter(activeInventory).length;
   const slowMovingCount = getSlowMovingInventory(store, 30, Number.POSITIVE_INFINITY).length;
+  const costPendingCount = getCostPendingCount(store);
 
-  if (profit < 0 || (capital > 0 && cash < 0) || recovery.recoveryRate < 30 || slowMovingCount >= 8) {
+  if (profit < 0 || (capital > 0 && cash < 0) || (recovery.recoveryRate !== null && recovery.recoveryRate < 30) || slowMovingCount >= 8) {
     return {
       label: "At Risk",
       tone: "danger",
@@ -374,7 +410,7 @@ export function getBusinessStatus(store, filters = {}) {
     };
   }
 
-  if (recovery.recoveryRate >= 70 && profit >= 0 && slowMovingCount <= 2) {
+  if (!costPendingCount && recovery.recoveryRate >= 70 && profit >= 0 && slowMovingCount <= 2) {
     return {
       label: "Healthy",
       tone: "good",
@@ -384,7 +420,7 @@ export function getBusinessStatus(store, filters = {}) {
     };
   }
 
-  if (recovery.recoveryRate < 70 || slowMovingCount > 2) {
+  if ((recovery.recoveryRate !== null && recovery.recoveryRate < 70) || slowMovingCount > 2 || costPendingCount) {
     return {
       label: "Needs Attention",
       tone: "warn",
@@ -395,11 +431,11 @@ export function getBusinessStatus(store, filters = {}) {
   }
 
   return {
-    label: slowMovingCount ? "Needs Attention" : "Healthy",
-    tone: slowMovingCount ? "warn" : "good",
+    label: slowMovingCount || costPendingCount ? "Needs Attention" : "Healthy",
+    tone: slowMovingCount || costPendingCount ? "warn" : "good",
     recoveryRate: recovery.recoveryRate,
     itemsLeft,
-    focus: slowMovingCount ? "Push slow-moving items with posts, discounts, or bundles." : "Keep selling and tracking cash.",
+    focus: costPendingCount ? `${costPendingCount} item cost${costPendingCount === 1 ? " is" : "s are"} pending.` : slowMovingCount ? "Push slow-moving items with posts, discounts, or bundles." : "Keep selling and tracking cash.",
   };
 }
 
@@ -416,15 +452,15 @@ export function getCollectionSnapshot(store, filters = {}) {
   const needsFocus = collections
     .slice()
     .sort((a, b) => {
-      if (a.recoveryRate !== b.recoveryRate) return a.recoveryRate - b.recoveryRate;
+      if (a.recoveryRate !== b.recoveryRate) return sortMetric(a.recoveryRate) - sortMetric(b.recoveryRate);
       return b.itemsLeft - a.itemsLeft;
     })[0];
 
   const best = collections
     .slice()
     .sort((a, b) => {
-      if (b.recoveryRate !== a.recoveryRate) return b.recoveryRate - a.recoveryRate;
-      return b.expectedGrossProfit - a.expectedGrossProfit;
+      if (b.recoveryRate !== a.recoveryRate) return sortMetric(b.recoveryRate) - sortMetric(a.recoveryRate);
+      return sortMetric(b.expectedGrossProfit) - sortMetric(a.expectedGrossProfit);
     })[0];
 
   return { needsFocus, best };
@@ -452,19 +488,23 @@ export function getActionCenterItems(store, filters = {}) {
   const bestPlatform = getBestPlatform(store, filters);
 
   if (current?.totalInventoryCost) {
-    const targetRecoveryAmount = toMoney(current.totalInventoryCost * 0.7);
-    const amountToTarget = toMoney(Math.max(targetRecoveryAmount - current.salesCollected, 0));
+    if (current.costPendingCount) {
+      actions.push(`Record ${current.costPendingCount} pending cost${current.costPendingCount === 1 ? "" : "s"} in ${current.name} before relying on profit or recovery.`);
+    } else {
+      const targetRecoveryAmount = toMoney(current.totalInventoryCost * 0.7);
+      const amountToTarget = toMoney(Math.max(targetRecoveryAmount - current.salesCollected, 0));
 
-    if (amountToTarget > 0) {
-      actions.push(`Sell more inventory to recover ${new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 }).format(amountToTarget)} more of your inventory cost.`);
+      if (amountToTarget > 0) {
+        actions.push(`Sell more inventory to recover ${new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 }).format(amountToTarget)} more of your inventory cost.`);
+      }
+
+      if (current.recoveryRate !== null && current.recoveryRate < 70) {
+        actions.push("Avoid buying another collection until more inventory cost is recovered.");
+      }
     }
 
     if (current.itemsLeft > 0) {
       actions.push(`Sell or promote ${current.itemsLeft} remaining item${current.itemsLeft === 1 ? "" : "s"}.`);
-    }
-
-    if (current.recoveryRate < 70) {
-      actions.push("Avoid buying another collection until more inventory cost is recovered.");
     }
   }
 
@@ -477,7 +517,7 @@ export function getActionCenterItems(store, filters = {}) {
 
 export function getBusinessMoneyFlow(store) {
   const capitalAdded = getCapitalAdded(store);
-  const inventoryPurchases = toMoney(store.purchases.reduce((sum, purchase) => sum + Number(purchase.cost || 0), 0));
+  const inventoryPurchases = toMoney(store.purchases.reduce((sum, purchase) => sum + knownCostOrZero(purchase.cost), 0));
   const salesCollected = getSalesCollected(store, { startDate: null, endDate: null });
   const expenses = toMoney(store.expenses.filter(cashExpense).reduce((sum, expense) => sum + Number(expense.amount || 0), 0));
   const withdrawals = getWithdrawals(store);
@@ -533,14 +573,17 @@ export function getTopProfitItem(store, filters = {}) {
   if (!sales.length) return null;
 
   const topSale = sales
+    .filter((sale) => sale.profit !== null && sale.profit !== undefined)
     .slice()
     .sort((a, b) => Number(b.profit || 0) - Number(a.profit || 0))[0];
+
+  if (!topSale) return null;
 
   return {
     itemId: topSale.itemId,
     itemName: topSale.itemName,
     sku: topSale.sku,
-    profit: toMoney(topSale.profit),
+    profit: topSale.profit,
     platform: topSale.platform || "Unknown",
     date: topSale.date,
   };
@@ -556,6 +599,7 @@ export function getMonthlyPerformance(store, filters = {}) {
     grossProfit: profit,
     netProfit: profit,
     profit,
+    costPendingCount: getSalesCostPendingCount(store, filters),
     roi: getROI(store, filters),
     salesRecordsCount,
     soldItemsCount: salesRecordsCount,
@@ -579,7 +623,7 @@ export function getHeroInsights(store, filters = {}) {
       : cash > capital
         ? `Cash is ${new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 }).format(cashDifference)} above capital after paid sales`
         : `${cashShare}% of capital remains as cash after purchases and expenses`,
-    profit: profit ? "Profit from sold items after item costs" : "No profit recorded this period",
+    profit: profit === null ? "Profit is pending until item costs are recorded" : profit ? "Profit from sold items after item costs" : "No profit recorded this period",
     revenue: orders ? `${orders} sale${orders === 1 ? "" : "s"} this period` : "No sales this period",
     platform: bestPlatform ? `${bestPlatform.platform} is leading this period` : "No platform leader yet",
   };
@@ -601,9 +645,10 @@ export function getSalesSummary(store, filters = {}) {
   return {
     revenue,
     profit,
+    costPendingCount: getSalesCostPendingCount(store, filters),
     orders,
     averageOrderValue: orders ? toMoney(revenue / orders) : 0,
-    profitMargin: revenue ? toMoney((profit / revenue) * 100) : 0,
+    profitMargin: revenue && profit !== null ? toMoney((profit / revenue) * 100) : null,
   };
 }
 

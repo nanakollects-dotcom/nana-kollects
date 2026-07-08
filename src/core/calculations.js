@@ -1,4 +1,5 @@
 import { CAPITAL_TYPES, PAYMENT_STATUSES, STATUSES } from "../services/repository.js";
+import { countPendingCosts, hasKnownCost, isCostPending, knownCostOrZero } from "./costs.js";
 import { isWithinRange } from "./filters.js";
 
 const money = (value) => Number(value || 0);
@@ -44,7 +45,7 @@ export function getRevenue(store, filters = {}) {
 }
 
 export function getCostOfSoldItems(store, filters = {}) {
-  return inRange(store.sales, filters).reduce((total, sale) => total + money(sale.cost), 0);
+  return inRange(store.sales, filters).reduce((total, sale) => total + knownCostOrZero(sale.cost), 0);
 }
 
 export function getExpenses(store, filters = {}) {
@@ -56,7 +57,7 @@ export function getProfit(store, filters = {}) {
 }
 
 export function getInventoryCost(store) {
-  return store.inventory.filter(availableInventory).reduce((total, item) => total + money(item.cost), 0);
+  return store.inventory.filter(availableInventory).reduce((total, item) => total + knownCostOrZero(item.cost), 0);
 }
 
 export function getInventoryValue(store) {
@@ -64,10 +65,12 @@ export function getInventoryValue(store) {
 }
 
 export function getInventoryProfitPotential(item) {
+  if (!hasKnownCost(item.cost)) return null;
   return money(item.price) - money(item.cost);
 }
 
 export function getInventoryMarginPercent(item) {
+  if (!hasKnownCost(item.cost)) return null;
   const price = money(item.price);
   if (!price) return 0;
   return ((price - money(item.cost)) / price) * 100;
@@ -93,7 +96,10 @@ export function getInventoryAlerts(store, filters = {}) {
   const slowMoving = getSlowMovingInventory(store, 30, Number.POSITIVE_INFINITY);
   const lowMargin = store.inventory
     .filter(activeInventory)
-    .filter((item) => getInventoryMarginPercent(item) < 30);
+    .filter((item) => {
+      const margin = getInventoryMarginPercent(item);
+      return margin !== null && margin < 30;
+    });
   const writtenOff = store.inventory
     .filter((item) => item.status === STATUSES.WRITTEN_OFF);
   const writtenOffThisPeriod = writtenOff.filter((item) => isWithinRange(item.writtenOffAt || item.createdAt, filters));
@@ -146,7 +152,7 @@ export function getCash(store) {
   const paidRevenue = store.sales
     .filter((sale) => sale.paymentStatus === PAYMENT_STATUSES.PAID)
     .reduce((total, sale) => total + money(sale.price), 0);
-  const inventoryPurchases = store.purchases.reduce((total, purchase) => total + money(purchase.cost), 0);
+  const inventoryPurchases = store.purchases.reduce((total, purchase) => total + knownCostOrZero(purchase.cost), 0);
   const cashExpenses = store.expenses
     .filter((expense) => expense.category !== "Write-Off")
     .reduce((total, expense) => total + money(expense.amount), 0);
@@ -188,14 +194,16 @@ export function getCollectionSnapshots(store, filters = {}) {
     const itemIds = new Set(items.map((item) => item.id));
     const sales = inRange(store.sales, filters).filter((sale) => itemIds.has(sale.itemId));
     const activeItems = performanceItems.filter(activeInventory);
+    const costPendingCount = countPendingCosts(performanceItems);
+    const salesCostPendingCount = countPendingCosts(sales);
     const remainingCount = activeItems.length;
     const soldCount = performanceItems.filter((item) => item.status === STATUSES.SOLD).length;
     const revenue = sales.reduce((total, sale) => total + money(sale.price), 0);
-    const cost = sales.reduce((total, sale) => total + money(sale.cost), 0);
+    const cost = sales.reduce((total, sale) => total + knownCostOrZero(sale.cost), 0);
     const total = soldCount + remainingCount;
-    const inventoryRemainingValue = activeItems.reduce((totalValue, item) => totalValue + money(item.cost), 0);
-    const capitalUsed = performanceItems.reduce((totalCost, item) => totalCost + money(item.cost), 0);
-    const roi = capitalUsed === 0 ? 0 : ((revenue - cost) / capitalUsed) * 100;
+    const inventoryRemainingValue = activeItems.reduce((totalValue, item) => totalValue + knownCostOrZero(item.cost), 0);
+    const capitalUsed = performanceItems.reduce((totalCost, item) => totalCost + knownCostOrZero(item.cost), 0);
+    const roi = costPendingCount || capitalUsed === 0 ? null : ((revenue - cost) / capitalUsed) * 100;
     const earliestItemDate = items
       .map((item) => item.createdAt)
       .filter(Boolean)
@@ -208,10 +216,12 @@ export function getCollectionSnapshots(store, filters = {}) {
       soldCount,
       remainingCount,
       revenue,
-      profit: revenue - cost,
+      profit: salesCostPendingCount ? null : revenue - cost,
       inventoryRemainingValue,
       capitalUsed,
       roi,
+      costPendingCount,
+      salesCostPendingCount,
       sellThrough: total === 0 ? 0 : (soldCount / total) * 100,
     };
   });
@@ -224,6 +234,7 @@ export function getBusinessSnapshot(store, filters = {}) {
     expenses: getExpenses(store, filters),
     cash: getCash(store),
     inventoryCost: getInventoryCost(store),
+    costPendingCount: countPendingCosts(store.inventory),
     inventoryValue: getInventoryValue(store),
     itemsSold: getItemsSold(store, filters),
     itemsAvailable: getItemsAvailable(store),
@@ -259,7 +270,11 @@ export function getFinancialIntegrityReport(store) {
     if (purchases.length > 1) report.errors.push(`Inventory item ${item.sku || item.id} has duplicate purchase records.`);
     if (purchases.length === 1) {
       const [purchase] = purchases;
-      if (money(purchase.cost) !== money(item.cost)) report.errors.push(`Purchase cost does not match item cost for ${item.sku || item.id}.`);
+      if (isCostPending(purchase) || isCostPending(item)) {
+        if (isCostPending(purchase) !== isCostPending(item)) report.warnings.push(`Purchase cost completeness does not match item cost for ${item.sku || item.id}.`);
+      } else if (money(purchase.cost) !== money(item.cost)) {
+        report.errors.push(`Purchase cost does not match item cost for ${item.sku || item.id}.`);
+      }
       if (!sameDateTime(purchase.date, item.createdAt)) report.warnings.push(`Purchase date does not match item created date for ${item.sku || item.id}.`);
     }
     if (item.status === STATUSES.SOLD && !salesByItemId.has(item.id)) {
@@ -269,7 +284,7 @@ export function getFinancialIntegrityReport(store) {
 
   store.purchases.forEach((purchase) => {
     if (!inventoryById.has(purchase.itemId)) report.errors.push(`Purchase record ${purchase.id || "unknown"} points to a missing inventory item.`);
-    if (money(purchase.cost) < 0) report.errors.push(`Purchase record ${purchase.id || "unknown"} has an invalid cost.`);
+    if (hasKnownCost(purchase.cost) && money(purchase.cost) < 0) report.errors.push(`Purchase record ${purchase.id || "unknown"} has an invalid cost.`);
     if (!isValidDate(purchase.date)) report.warnings.push(`Purchase record ${purchase.id || "unknown"} has an invalid date.`);
   });
 
@@ -284,7 +299,7 @@ export function getFinancialIntegrityReport(store) {
     if (!item) report.errors.push(`Sale record ${sale.id || "unknown"} points to a missing inventory item.`);
     if (item && item.status !== STATUSES.SOLD) report.errors.push(`Sale record ${sale.id || "unknown"} exists but inventory item ${item.sku || item.id} is not Sold.`);
     if (money(sale.price) < 0) report.errors.push(`Sale record ${sale.id || "unknown"} has an invalid price.`);
-    if (money(sale.cost) < 0) report.errors.push(`Sale record ${sale.id || "unknown"} has an invalid cost.`);
+    if (hasKnownCost(sale.cost) && money(sale.cost) < 0) report.errors.push(`Sale record ${sale.id || "unknown"} has an invalid cost.`);
     if (!isValidDate(sale.date)) report.warnings.push(`Sale record ${sale.id || "unknown"} has an invalid date.`);
   });
 

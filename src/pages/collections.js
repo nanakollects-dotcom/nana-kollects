@@ -15,15 +15,6 @@ const escapeText = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => 
 })[char]);
 const toDateInput = (value) => new Date(value).toISOString().slice(0, 10);
 const todayDateInput = () => new Date().toISOString().slice(0, 10);
-const collectionStatus = (collection) => {
-  if (collection.recoveryRate < 30 || collection.recordedProfit < 0 || collection.itemsLeft >= 20) {
-    return { label: "At Risk", className: "yellow-pill" };
-  }
-  if (collection.recoveryRate < 70 || collection.itemsLeft >= 10) {
-    return { label: "Needs Attention", className: "info-pill" };
-  }
-  return { label: "Healthy", className: "green-pill" };
-};
 const logicalCollectionNumber = (name) => {
   const match = String(name || "").match(/\d+/);
   return match ? Number(match[0]) : 0;
@@ -66,8 +57,6 @@ export function renderCollectionsPage(store, filters) {
   const collections = getCollectionBusinessMetrics(store, filters).slice().sort(sortNewestCollectionFirst);
   const cards = collections
     .map((collection) => {
-      const status = collectionStatus(collection);
-
       return `
         <article class="collection-card">
           <div class="collection-card-header">
@@ -75,7 +64,7 @@ export function renderCollectionsPage(store, filters) {
               <h2>${escapeText(collection.name)}</h2>
               <span>${collection.createdAt ? `Created: ${formatDate(collection.createdAt)}` : "Created date unavailable"}</span>
             </div>
-            <span class="pill ${status.className}">${status.label}</span>
+            <span class="pill ${collection.statusClassName}">${collection.status}</span>
           </div>
 
           <div class="collection-hero-stats">

@@ -8,6 +8,58 @@ const inRange = (items, filters = {}) =>
 const activeInventory = (item) => item.status === STATUSES.AVAILABLE || item.status === STATUSES.RESERVED;
 const cashExpense = (expense) => expense.category !== "Write-Off";
 
+const ageInDays = (value, asOf = new Date()) => {
+  if (!value) return 0;
+  const date = new Date(value);
+  const end = new Date(asOf);
+  if (Number.isNaN(date.getTime()) || Number.isNaN(end.getTime())) return 0;
+  return Math.max(0, Math.floor((end - date) / 86400000));
+};
+
+export function getCollectionHealth(collection, asOf = new Date()) {
+  const capitalSpent = Number(collection.capitalSpent ?? collection.totalInventoryCost ?? 0);
+  const salesCollected = Number(collection.salesCollected || 0);
+  const soldItems = Number(collection.soldStock ?? collection.soldCount ?? 0);
+  const totalItems = Number(collection.itemsCount ?? soldItems + Number(collection.itemsLeft ?? collection.remainingCount ?? 0));
+  const capitalRecovery = capitalSpent > 0 ? toMoney((salesCollected / capitalSpent) * 100) : 0;
+  const sellThrough = totalItems > 0 ? toMoney((soldItems / totalItems) * 100) : 0;
+  const ageDays = ageInDays(collection.createdAt, asOf);
+
+  if (capitalRecovery >= 100 || (capitalRecovery >= 70 && sellThrough >= 50)) {
+    return {
+      label: "Healthy",
+      tone: "good",
+      className: "green-pill",
+      capitalRecovery,
+      sellThrough,
+      ageDays,
+    };
+  }
+
+  if (
+    (ageDays >= 30 && capitalRecovery < 50 && sellThrough < 30) ||
+    (ageDays >= 45 && capitalRecovery < 70 && sellThrough < 40)
+  ) {
+    return {
+      label: "At Risk",
+      tone: "warn",
+      className: "yellow-pill",
+      capitalRecovery,
+      sellThrough,
+      ageDays,
+    };
+  }
+
+  return {
+    label: "Needs Attention",
+    tone: "warn",
+    className: "info-pill",
+    capitalRecovery,
+    sellThrough,
+    ageDays,
+  };
+}
+
 export function getRevenue(store, filters = {}) {
   return toMoney(inRange(store.sales, filters).reduce((sum, sale) => sum + Number(sale.price || 0), 0));
 }
@@ -227,7 +279,7 @@ export function getCollectionBusinessMetrics(store, filters = {}) {
       .filter(Boolean)
       .sort((a, b) => new Date(a) - new Date(b))[0];
 
-    return {
+    const metrics = {
       id: collectionRecord?.id || "",
       name,
       createdAt: collectionRecord?.createdAt || earliestItemDate || "",
@@ -251,6 +303,16 @@ export function getCollectionBusinessMetrics(store, filters = {}) {
       itemsLeft,
       remainingCount: itemsLeft,
       sellThrough: sellThroughBase ? toMoney((soldStock / sellThroughBase) * 100) : 0,
+    };
+    const health = getCollectionHealth(metrics);
+
+    return {
+      ...metrics,
+      ageDays: health.ageDays,
+      health,
+      status: health.label,
+      statusTone: health.tone,
+      statusClassName: health.className,
     };
   });
 }
@@ -377,16 +439,10 @@ export function getCurrentCollectionSnapshot(store, filters = {}) {
 
   if (!current) return null;
 
-  const status = current.recoveryRate >= 70
-    ? { label: "Healthy", tone: "good" }
-    : current.recoveryRate < 20 || current.itemsLeft >= 20
-      ? { label: "Needs Attention", tone: "warn" }
-      : { label: "Needs Attention", tone: "warn" };
-
   return {
     ...current,
-    status: status.label,
-    statusTone: status.tone,
+    status: current.status,
+    statusTone: current.statusTone,
   };
 }
 

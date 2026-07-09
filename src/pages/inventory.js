@@ -5,12 +5,18 @@ import {
   removeSupabaseInventoryItem,
   saveSupabaseInventoryItem,
   setSupabaseInventoryStatus,
+  addPaymentRequest,
+  cancelPaymentRequest,
+  markPaymentRequestPaid,
+  savePaymentConfiguration,
   PAYMENT_STATUSES,
   PLATFORMS,
   STATUSES,
 } from "../services/repository.js";
 import { bindForm, emptyState, modal, pageHeader } from "../components/ui.js";
 import { formatMoney } from "../components/format.js";
+import { calculatePaymentRequestTotal, isPaymentConfigurationComplete, PAYMENT_METHODS } from "../core/paymentRequests.js";
+import { createPaymentRequestPdf, downloadPaymentRequestPdf } from "../services/paymentRequestPdf.js";
 
 let editingId = null;
 let isModalOpen = false;
@@ -20,6 +26,9 @@ let collectionFilter = "all";
 let ageFilter = "all";
 let costFilter = "all";
 let inventoryDraft = null;
+let paymentRequestItemId = null;
+let paymentConfigOpen = false;
+let paidRequestId = null;
 
 const escapeText = (value) =>
   String(value ?? "").replace(/[&<>"']/g, (char) => ({
@@ -92,6 +101,27 @@ const canRunStatusAction = (current, next) => {
 };
 
 const actionDisabled = (current, next) => canRunStatusAction(current, next) ? "" : "disabled";
+
+const requestStatusClass = (status) => {
+  if (status === "Paid") return "green-pill";
+  if (status === "Cancelled") return "gray-pill";
+  return "yellow-pill";
+};
+
+const readImageAsDataUrl = (file) => new Promise((resolve, reject) => {
+  if (!file) {
+    reject(new Error("Upload a GoTyme QR image."));
+    return;
+  }
+  if (!String(file.type || "").startsWith("image/")) {
+    reject(new Error("GoTyme QR must be an image."));
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => resolve(String(reader.result || ""));
+  reader.onerror = () => reject(new Error("Could not read the GoTyme QR image."));
+  reader.readAsDataURL(file);
+});
 
 const skuSortValue = (sku) => {
   const match = String(sku || "").match(/^NK-(\d+)$/i);
@@ -343,6 +373,169 @@ function inventoryForm(store) {
   `;
 }
 
+function paymentRequestForm(store) {
+  const item = store.inventory.find((entry) => entry.id === paymentRequestItemId);
+  if (!item) return "";
+
+  return modal(
+    "Create Payment Request",
+    `
+      <form class="form-panel modal-form payment-request-form" id="payment-request-form">
+        <div class="modal-header">
+          <div>
+            <h2>Create Payment Request</h2>
+            <p>${escapeText(item.sku)} · ${escapeText(item.name)}</p>
+          </div>
+          <button class="icon-btn" type="button" data-close-payment-request>Close</button>
+        </div>
+
+        <section class="modal-section">
+          <h3>Customer</h3>
+          <div class="form-row">
+            <label>Customer Name<input name="customerName" required /></label>
+            <label>Customer Contact<input name="customerContact" required /></label>
+          </div>
+          <label>Shipping Address<textarea name="shippingAddress" rows="2" placeholder="Optional"></textarea></label>
+        </section>
+
+        <section class="modal-section">
+          <h3>Order</h3>
+          <label>Item Name<input value="${escapeText(item.name)}" readonly /></label>
+          <div class="form-row">
+            <label>Selling Price<input type="number" name="itemPrice" min="0" step="0.01" value="${item.price}" required /></label>
+            <label>Shipping Fee<input type="number" name="shippingFee" min="0" step="0.01" value="0" /></label>
+          </div>
+          <div class="form-row">
+            <label>Discount<input type="number" name="discount" min="0" step="0.01" value="0" /></label>
+            <label>Valid Until<input type="date" name="validUntil" /></label>
+          </div>
+          <label>Customer-facing Note<textarea name="customerNote" rows="2" placeholder="Optional"></textarea></label>
+        </section>
+
+        <section class="modal-section payment-request-summary">
+          <h3>Summary</h3>
+          <div><span>Subtotal</span><strong data-request-subtotal>${formatMoney(item.price)}</strong></div>
+          <div data-request-shipping-row hidden><span>Shipping Fee</span><strong data-request-shipping>${formatMoney(0)}</strong></div>
+          <div data-request-discount-row hidden><span>Discount</span><strong data-request-discount>${formatMoney(0)}</strong></div>
+          <div class="request-total"><span>Total Amount Due</span><strong data-request-total>${formatMoney(item.price)}</strong></div>
+        </section>
+
+        <div class="button-row">
+          <button class="primary-btn" type="submit" data-saving-text="Generating...">Generate Payment Request</button>
+          <button class="secondary-btn" type="button" data-close-payment-request>Cancel</button>
+        </div>
+      </form>
+    `,
+    "payment-request-modal-panel",
+  );
+}
+
+function paymentConfigForm(store) {
+  const config = store.paymentConfig || {};
+  return modal(
+    "Payment Details",
+    `
+      <form class="form-panel modal-form payment-config-form" id="payment-config-form">
+        <div class="modal-header">
+          <h2>Payment Details</h2>
+          <button class="icon-btn" type="button" data-close-payment-config>Close</button>
+        </div>
+        <section class="modal-section">
+          <h3>GCash</h3>
+          <div class="form-row">
+            <label>Account Name<input name="gcashAccountName" value="${escapeText(config.gcashAccountName)}" required /></label>
+            <label>Mobile Number<input name="gcashMobileNumber" value="${escapeText(config.gcashMobileNumber)}" required /></label>
+          </div>
+        </section>
+        <section class="modal-section">
+          <h3>GoTyme</h3>
+          <label>Account Name<input name="gotymeAccountName" value="${escapeText(config.gotymeAccountName)}" /></label>
+          <label>QR Image<input type="file" name="gotymeQrImage" accept="image/png,image/jpeg" ${config.gotymeQrImage ? "" : "required"} /></label>
+          ${config.gotymeQrImage ? `<p class="modal-copy">A GoTyme QR image is configured. Upload a new image only to replace it.</p>` : ""}
+        </section>
+        <div class="button-row">
+          <button class="primary-btn" type="submit" data-saving-text="Saving...">Save Payment Details</button>
+          <button class="secondary-btn" type="button" data-close-payment-config>Cancel</button>
+        </div>
+      </form>
+    `,
+  );
+}
+
+function paidRequestForm(store) {
+  const request = store.paymentRequests.find((entry) => entry.id === paidRequestId);
+  if (!request) return "";
+  return modal(
+    "Confirm Payment",
+    `
+      <form class="form-panel modal-form" id="payment-paid-form">
+        <div class="modal-header">
+          <div>
+            <h2>Confirm Payment</h2>
+            <p>${escapeText(request.requestNumber)}</p>
+          </div>
+          <button class="icon-btn" type="button" data-close-paid-request>Close</button>
+        </div>
+        <section class="modal-section">
+          <label>Payment Method
+            <select name="paymentMethod" required>
+              <option value="">Choose method</option>
+              ${PAYMENT_METHODS.map((method) => `<option value="${method}">${method}</option>`).join("")}
+            </select>
+          </label>
+          <p class="modal-copy">This finalizes the existing sale at ${formatMoney(request.itemPrice)}.</p>
+        </section>
+        <div class="button-row">
+          <button class="primary-btn" type="submit" data-saving-text="Confirming...">Mark Paid</button>
+          <button class="secondary-btn" type="button" data-close-paid-request>Cancel</button>
+        </div>
+      </form>
+    `,
+  );
+}
+
+function renderPaymentRequests(store) {
+  const requests = store.paymentRequests || [];
+  const rows = requests.map((request) => `
+    <tr>
+      <td><strong>${escapeText(request.requestNumber)}</strong><small>${escapeText(request.itemName)}</small></td>
+      <td>${escapeText(request.customerName)}</td>
+      <td class="money-cell">${formatMoney(request.totalAmount)}</td>
+      <td><span class="pill ${requestStatusClass(request.status)}">${request.status}</span></td>
+      <td class="actions-cell request-actions">
+        <button class="table-action" type="button" data-download-request="${request.id}">Download</button>
+        ${request.status === "Pending" ? `
+          <button class="table-action primary-action" type="button" data-paid-request="${request.id}">Mark Paid</button>
+          <button class="table-action danger" type="button" data-cancel-request="${request.id}">Cancel</button>
+        ` : ""}
+      </td>
+    </tr>
+  `).join("");
+
+  return `
+    <section class="panel payment-requests-panel">
+      <div class="section-heading">
+        <div>
+          <h2>Payment Requests</h2>
+          <p>${requests.length} saved request${requests.length === 1 ? "" : "s"}</p>
+        </div>
+        <button class="secondary-btn" type="button" data-open-payment-config>
+          ${isPaymentConfigurationComplete(store.paymentConfig) ? "Payment Details" : "Set Up Payment Details"}
+        </button>
+      </div>
+      ${requests.length ? `
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Request</th><th>Customer</th><th class="money-cell">Amount</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      ` : emptyState("No payment requests yet", "Create one from an Available inventory item.")}
+    </section>
+  `;
+}
+
+
 function filteredInventory(store) {
   const normalizedSearch = searchTerm.trim().toLowerCase();
 
@@ -389,6 +582,7 @@ function renderInventoryResults(store) {
           <td class="${ageClass(item)}">${formatAge(item)}</td>
 
           <td class="actions-cell">
+            ${item.status === STATUSES.AVAILABLE ? `<button class="table-action" data-create-request="${item.id}" title="Create Payment Request">Request</button>` : ""}
             <button class="table-action primary-action" data-edit="${item.id}" title="Edit">
               Edit
             </button>
@@ -424,6 +618,7 @@ function renderInventoryResults(store) {
           </div>
 
           <div class="record-actions">
+            ${item.status === STATUSES.AVAILABLE ? `<button class="table-action" data-create-request="${item.id}">Create Payment Request</button>` : ""}
             <button class="table-action primary-action" data-edit="${item.id}">
               Edit
             </button>
@@ -537,12 +732,20 @@ export function renderInventoryPage(store) {
 
     ${renderInventoryResults(store)}
 
+    ${renderPaymentRequests(store)}
+
     ${isModalOpen ? inventoryForm(store) : ""}
+    ${paymentRequestItemId ? paymentRequestForm(store) : ""}
+    ${paymentConfigOpen ? paymentConfigForm(store) : ""}
+    ${paidRequestId ? paidRequestForm(store) : ""}
   `;
 }
 
 export function bindInventoryPage(root, store, notify, refresh) {
   const form = root.querySelector("#inventory-form");
+  const paymentForm = root.querySelector("#payment-request-form");
+  const configForm = root.querySelector("#payment-config-form");
+  const paidForm = root.querySelector("#payment-paid-form");
   const editingItem = store.inventory.find((item) => item.id === editingId);
 
   if (form && editingItem) {
@@ -603,6 +806,87 @@ export function bindInventoryPage(root, store, notify, refresh) {
     });
   }
 
+  if (paymentForm) {
+    const updateSummary = () => {
+      try {
+        const amounts = calculatePaymentRequestTotal(
+          paymentForm.elements.itemPrice.value,
+          paymentForm.elements.shippingFee.value,
+          paymentForm.elements.discount.value,
+        );
+        root.querySelector("[data-request-subtotal]").textContent = formatMoney(amounts.itemPrice);
+        root.querySelector("[data-request-shipping]").textContent = formatMoney(amounts.shippingFee);
+        root.querySelector("[data-request-discount]").textContent = `- ${formatMoney(amounts.discount)}`;
+        root.querySelector("[data-request-total]").textContent = formatMoney(amounts.total);
+        root.querySelector("[data-request-shipping-row]").hidden = amounts.shippingFee === 0;
+        root.querySelector("[data-request-discount-row]").hidden = amounts.discount === 0;
+      } catch {
+        root.querySelector("[data-request-total]").textContent = "—";
+      }
+    };
+    ["itemPrice", "shippingFee", "discount"].forEach((name) => {
+      paymentForm.elements[name].addEventListener("input", updateSummary);
+    });
+
+    bindForm(paymentForm, async (data) => {
+      try {
+        if (!isPaymentConfigurationComplete(store.paymentConfig)) {
+          throw new Error("Set up GCash details and the GoTyme QR before generating a request.");
+        }
+        const amounts = calculatePaymentRequestTotal(data.itemPrice, data.shippingFee, data.discount);
+        const result = await addPaymentRequest({
+          ...data,
+          itemId: paymentRequestItemId,
+          paymentConfig: store.paymentConfig,
+          ...amounts,
+        });
+        const bytes = await createPaymentRequestPdf(result.request, {
+          ...result.request.paymentConfig,
+          gotymeQrImage: result.store.paymentConfig.gotymeQrImage,
+        });
+        downloadPaymentRequestPdf(bytes, result.request.requestNumber);
+        paymentRequestItemId = null;
+        notify(`${result.request.requestNumber} created. Item reserved.`);
+        refresh();
+      } catch (error) {
+        notify(error.message, true);
+        return false;
+      }
+    });
+  }
+
+  if (configForm) {
+    bindForm(configForm, async (data) => {
+      try {
+        const file = configForm.elements.gotymeQrImage.files?.[0];
+        const gotymeQrImage = file
+          ? await readImageAsDataUrl(file)
+          : store.paymentConfig?.gotymeQrImage;
+        await savePaymentConfiguration({ ...data, gotymeQrImage });
+        paymentConfigOpen = false;
+        notify("Payment details saved.");
+        refresh();
+      } catch (error) {
+        notify(error.message, true);
+        return false;
+      }
+    });
+  }
+
+  if (paidForm) {
+    bindForm(paidForm, async (data) => {
+      try {
+        await markPaymentRequestPaid(paidRequestId, data.paymentMethod);
+        paidRequestId = null;
+        notify("Payment confirmed and sale recorded.");
+        refresh();
+      } catch (error) {
+        notify(error.message, true);
+        return false;
+      }
+    });
+  }
+
   root.querySelector("#inventory-search")?.addEventListener("input", (event) => {
     searchTerm = event.target.value;
     const results = root.querySelector("[data-inventory-results]");
@@ -650,6 +934,59 @@ export function bindInventoryPage(root, store, notify, refresh) {
         inventoryDraft = null;
         editingId = null;
         isModalOpen = true;
+        refresh();
+      }
+
+      if (button.dataset.createRequest) {
+        if (!isPaymentConfigurationComplete(store.paymentConfig)) {
+          paymentConfigOpen = true;
+          notify("Set up payment details before creating a request.", true);
+        } else {
+          paymentRequestItemId = button.dataset.createRequest;
+        }
+        refresh();
+      }
+
+      if (button.hasAttribute("data-open-payment-config")) {
+        paymentConfigOpen = true;
+        refresh();
+      }
+
+      if (button.hasAttribute("data-close-payment-config")) {
+        paymentConfigOpen = false;
+        refresh();
+      }
+
+      if (button.hasAttribute("data-close-payment-request")) {
+        paymentRequestItemId = null;
+        refresh();
+      }
+
+      if (button.dataset.downloadRequest) {
+        const request = store.paymentRequests.find((entry) => entry.id === button.dataset.downloadRequest);
+        if (!request) throw new Error("Payment request not found.");
+        const bytes = await createPaymentRequestPdf(request, {
+          ...request.paymentConfig,
+          gotymeQrImage: store.paymentConfig.gotymeQrImage,
+        });
+        downloadPaymentRequestPdf(bytes, request.requestNumber);
+        notify("Payment Request downloaded.");
+      }
+
+      if (button.dataset.paidRequest) {
+        paidRequestId = button.dataset.paidRequest;
+        refresh();
+      }
+
+      if (button.hasAttribute("data-close-paid-request")) {
+        paidRequestId = null;
+        refresh();
+      }
+
+      if (button.dataset.cancelRequest) {
+        if (!confirm("Cancel this Payment Request and release the reserved item?")) return;
+        await cancelPaymentRequest(button.dataset.cancelRequest);
+        notify("Payment Request cancelled. Item released.");
         refresh();
       }
 

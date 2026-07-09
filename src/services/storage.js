@@ -14,6 +14,13 @@ export const emptyStore = () => ({
   purchases: [],
   logs: [],
   collections: [],
+  paymentRequests: [],
+  paymentConfig: {
+    gcashAccountName: "",
+    gcashMobileNumber: "",
+    gotymeAccountName: "",
+    gotymeQrImage: "",
+  },
   meta: {
     lastSkuNumber: 0,
   },

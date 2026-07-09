@@ -17,6 +17,10 @@ import {
   createSupabaseCapitalEntry,
   updateSupabaseCapitalEntry,
   replaceSupabaseStoreFromBackup,
+  saveSupabasePaymentConfig,
+  createSupabasePaymentRequest,
+  markSupabasePaymentRequestPaid,
+  cancelSupabasePaymentRequest,
 } from "./supabaseStorage.js";
 
 export const STATUSES = {
@@ -160,6 +164,38 @@ export async function saveSupabaseInventoryItem(itemId, input) {
 export async function setSupabaseInventoryStatus(itemId, nextStatus, paymentStatus, platform) {
   return runRepositoryOperation(async () => {
     await changeSupabaseInventoryStatus(itemId, nextStatus, paymentStatus, platform);
+    return syncSupabaseStore();
+  });
+}
+
+export async function savePaymentConfiguration(input) {
+  return runRepositoryOperation(async () => {
+    await saveSupabasePaymentConfig(input);
+    return syncSupabaseStore();
+  });
+}
+
+export async function addPaymentRequest(input) {
+  return runRepositoryOperation(async () => {
+    const request = await createSupabasePaymentRequest(input);
+    const store = await syncSupabaseStore();
+    return {
+      request: store.paymentRequests.find((entry) => entry.id === request.id) || request,
+      store,
+    };
+  });
+}
+
+export async function markPaymentRequestPaid(requestId, paymentMethod) {
+  return runRepositoryOperation(async () => {
+    await markSupabasePaymentRequestPaid(requestId, paymentMethod);
+    return syncSupabaseStore();
+  });
+}
+
+export async function cancelPaymentRequest(requestId) {
+  return runRepositoryOperation(async () => {
+    await cancelSupabasePaymentRequest(requestId);
     return syncSupabaseStore();
   });
 }

@@ -165,6 +165,36 @@ create table if not exists public.settings (
   constraint settings_user_key_unique unique (user_id, key)
 );
 
+create table if not exists public.payment_requests (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  request_number text not null,
+  inventory_item_id uuid not null references public.inventory_items(id) on delete restrict,
+  customer_name text not null,
+  customer_contact text not null,
+  shipping_address text,
+  item_name_snapshot text not null,
+  item_price numeric(12,2) not null,
+  shipping_fee numeric(12,2) not null default 0,
+  discount numeric(12,2) not null default 0,
+  total_amount numeric(12,2) not null,
+  status text not null default 'Pending',
+  issued_at timestamptz not null default now(),
+  valid_until date,
+  customer_note text,
+  payment_config_snapshot jsonb not null default '{}'::jsonb,
+  payment_method text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint payment_requests_user_number_unique unique (user_id, request_number),
+  constraint payment_requests_item_price_nonnegative check (item_price >= 0),
+  constraint payment_requests_shipping_nonnegative check (shipping_fee >= 0),
+  constraint payment_requests_discount_nonnegative check (discount >= 0),
+  constraint payment_requests_total_nonnegative check (total_amount >= 0),
+  constraint payment_requests_status_check check (status in ('Pending', 'Paid', 'Cancelled')),
+  constraint payment_requests_method_check check (payment_method is null or payment_method in ('GCash', 'GoTyme'))
+);
+
 alter table public.inventory_items alter column cost drop not null;
 alter table public.inventory_items alter column cost drop default;
 alter table public.sales alter column cost_snapshot drop not null;
@@ -212,6 +242,11 @@ create trigger set_settings_updated_at
 before update on public.settings
 for each row execute function public.set_updated_at();
 
+drop trigger if exists set_payment_requests_updated_at on public.payment_requests;
+create trigger set_payment_requests_updated_at
+before update on public.payment_requests
+for each row execute function public.set_updated_at();
+
 create index if not exists idx_collections_user_id on public.collections(user_id);
 create index if not exists idx_collections_user_name on public.collections(user_id, name);
 create index if not exists idx_collections_user_collection_date on public.collections(user_id, collection_date);
@@ -226,6 +261,7 @@ create index if not exists idx_sales_inventory_item_id on public.sales(inventory
 create index if not exists idx_sales_collection_id on public.sales(collection_id);
 create index if not exists idx_sales_user_sale_date on public.sales(user_id, sale_date);
 create index if not exists idx_sales_user_platform on public.sales(user_id, platform);
+create unique index if not exists idx_sales_one_per_inventory_item on public.sales(inventory_item_id) where inventory_item_id is not null;
 
 create index if not exists idx_expenses_user_id on public.expenses(user_id);
 create index if not exists idx_expenses_inventory_item_id on public.expenses(inventory_item_id);
@@ -248,6 +284,12 @@ create index if not exists idx_inventory_purchases_user_purchase_date on public.
 create index if not exists idx_settings_user_id on public.settings(user_id);
 create index if not exists idx_settings_user_key on public.settings(user_id, key);
 
+create unique index if not exists idx_payment_requests_one_pending_item
+on public.payment_requests(inventory_item_id)
+where status = 'Pending';
+create index if not exists idx_payment_requests_user_id on public.payment_requests(user_id);
+create index if not exists idx_payment_requests_user_issued on public.payment_requests(user_id, issued_at desc);
+
 alter table public.profiles enable row level security;
 alter table public.collections enable row level security;
 alter table public.inventory_items enable row level security;
@@ -257,6 +299,7 @@ alter table public.capital_records enable row level security;
 alter table public.activity_logs enable row level security;
 alter table public.inventory_purchases enable row level security;
 alter table public.settings enable row level security;
+alter table public.payment_requests enable row level security;
 
 drop policy if exists "profiles_select_own" on public.profiles;
 create policy "profiles_select_own"
@@ -374,3 +417,15 @@ create policy "settings_update_own" on public.settings for update using (auth.ui
 
 drop policy if exists "settings_delete_own" on public.settings;
 create policy "settings_delete_own" on public.settings for delete using (auth.uid() = user_id);
+
+drop policy if exists "payment_requests_select_own" on public.payment_requests;
+create policy "payment_requests_select_own" on public.payment_requests for select using (auth.uid() = user_id);
+
+drop policy if exists "payment_requests_insert_own" on public.payment_requests;
+create policy "payment_requests_insert_own" on public.payment_requests for insert with check (auth.uid() = user_id);
+
+drop policy if exists "payment_requests_update_own" on public.payment_requests;
+create policy "payment_requests_update_own" on public.payment_requests for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "payment_requests_delete_own" on public.payment_requests;
+create policy "payment_requests_delete_own" on public.payment_requests for delete using (auth.uid() = user_id);

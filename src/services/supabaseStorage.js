@@ -141,6 +141,7 @@ export async function loadSupabaseStore() {
     purchasesResult,
     logsResult,
     settingsResult,
+    paymentRequestsResult,
   ] = await Promise.all([
     supabase.from("collections").select("*").eq("user_id", userId),
     supabase.from("inventory_items").select("*").eq("user_id", userId),
@@ -150,6 +151,7 @@ export async function loadSupabaseStore() {
     supabase.from("inventory_purchases").select("*").eq("user_id", userId),
     supabase.from("activity_logs").select("*").eq("user_id", userId),
     supabase.from("settings").select("*").eq("user_id", userId),
+    supabase.from("payment_requests").select("*").eq("user_id", userId).order("issued_at", { ascending: false }),
   ]);
 
   const results = [
@@ -161,6 +163,7 @@ export async function loadSupabaseStore() {
     purchasesResult,
     logsResult,
     settingsResult,
+    paymentRequestsResult,
   ];
 
   const failed = results.find((result) => result.error);
@@ -168,6 +171,7 @@ export async function loadSupabaseStore() {
 
   const settings = settingsResult.data || [];
   const metaSetting = settings.find((item) => item.key === "meta");
+  const paymentConfigSetting = settings.find((item) => item.key === "payment_config");
   const collections = (collectionsResult.data || []).map((item) => ({
     id: item.id,
     name: item.name,
@@ -262,10 +266,111 @@ export async function loadSupabaseStore() {
       date: log.activity_date,
     })),
 
+    paymentRequests: (paymentRequestsResult.data || []).map((request) => ({
+      id: request.id,
+      requestNumber: request.request_number,
+      itemId: request.inventory_item_id,
+      customerName: request.customer_name,
+      customerContact: request.customer_contact,
+      shippingAddress: request.shipping_address || "",
+      itemName: request.item_name_snapshot,
+      itemPrice: Number(request.item_price || 0),
+      shippingFee: Number(request.shipping_fee || 0),
+      discount: Number(request.discount || 0),
+      totalAmount: Number(request.total_amount || 0),
+      status: request.status,
+      issuedAt: request.issued_at,
+      validUntil: request.valid_until,
+      customerNote: request.customer_note || "",
+      paymentConfig: request.payment_config_snapshot || {},
+      paymentMethod: request.payment_method || "",
+      createdAt: request.created_at,
+      updatedAt: request.updated_at,
+    })),
+
+    paymentConfig: {
+      gcashAccountName: String(paymentConfigSetting?.value?.gcashAccountName || ""),
+      gcashMobileNumber: String(paymentConfigSetting?.value?.gcashMobileNumber || ""),
+      gotymeAccountName: String(paymentConfigSetting?.value?.gotymeAccountName || ""),
+      gotymeQrImage: String(paymentConfigSetting?.value?.gotymeQrImage || ""),
+    },
+
     meta: {
       lastSkuNumber: Number(metaSetting?.value?.lastSkuNumber || 0),
     },
   };
+}
+
+export async function saveSupabasePaymentConfig(input) {
+  const userId = await getUserId();
+  const value = {
+    gcashAccountName: String(input.gcashAccountName || "").trim(),
+    gcashMobileNumber: String(input.gcashMobileNumber || "").trim(),
+    gotymeAccountName: String(input.gotymeAccountName || "").trim(),
+    gotymeQrImage: String(input.gotymeQrImage || ""),
+  };
+
+  assert(value.gcashAccountName, "GCash account name is required.");
+  assert(value.gcashMobileNumber, "GCash mobile number is required.");
+  assert(value.gotymeQrImage.startsWith("data:image/"), "Upload a GoTyme QR image.");
+
+  const { error } = await supabase.from("settings").upsert(
+    { user_id: userId, key: "payment_config", value },
+    { onConflict: "user_id,key" },
+  );
+  if (error) throw error;
+  return value;
+}
+
+export async function createSupabasePaymentRequest(input) {
+  const amounts = {
+    itemPrice: money(input.itemPrice),
+    shippingFee: money(input.shippingFee),
+    discount: money(input.discount),
+  };
+
+  assert(String(input.customerName || "").trim(), "Customer name is required.");
+  assert(String(input.customerContact || "").trim(), "Customer contact is required.");
+  assert(amounts.itemPrice >= 0, "Selling price must be zero or higher.");
+  assert(amounts.shippingFee >= 0, "Shipping fee must be zero or higher.");
+  assert(amounts.discount >= 0, "Discount must be zero or higher.");
+  assert(amounts.itemPrice + amounts.shippingFee - amounts.discount >= 0, "Total amount due cannot be negative.");
+
+  const { data, error } = await supabase.rpc("create_payment_request", {
+    p_inventory_item_id: input.itemId,
+    p_customer_name: String(input.customerName || "").trim(),
+    p_customer_contact: String(input.customerContact || "").trim(),
+    p_shipping_address: String(input.shippingAddress || "").trim(),
+    p_item_price: amounts.itemPrice,
+    p_shipping_fee: amounts.shippingFee,
+    p_discount: amounts.discount,
+    p_valid_until: input.validUntil || null,
+    p_customer_note: String(input.customerNote || "").trim(),
+    p_payment_config: {
+      gcashAccountName: String(input.paymentConfig?.gcashAccountName || ""),
+      gcashMobileNumber: String(input.paymentConfig?.gcashMobileNumber || ""),
+      gotymeAccountName: String(input.paymentConfig?.gotymeAccountName || ""),
+    },
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function markSupabasePaymentRequestPaid(requestId, paymentMethod) {
+  const { data, error } = await supabase.rpc("mark_payment_request_paid", {
+    p_request_id: requestId,
+    p_payment_method: paymentMethod,
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function cancelSupabasePaymentRequest(requestId) {
+  const { data, error } = await supabase.rpc("cancel_payment_request", {
+    p_request_id: requestId,
+  });
+  if (error) throw error;
+  return data;
 }
 
 export async function createSupabaseCollection(input) {
@@ -1015,6 +1120,7 @@ export async function replaceSupabaseStoreFromBackup(rawStore) {
   const inventoryIds = new Map();
 
   const deleteResults = await Promise.all([
+    supabase.from("payment_requests").delete().eq("user_id", userId),
     supabase.from("sales").delete().eq("user_id", userId),
     supabase.from("expenses").delete().eq("user_id", userId),
     supabase.from("inventory_purchases").delete().eq("user_id", userId),

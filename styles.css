@@ -2095,6 +2095,49 @@ td:nth-child(n + 3) {
   gap: 8px;
 }
 
+.payment-requests-panel {
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.payment-requests-panel td:first-child small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+}
+
+.request-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.payment-request-summary > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 18px;
+  color: var(--muted);
+}
+
+.payment-request-summary .request-total {
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 16px;
+}
+
+.payment-request-form textarea,
+.payment-config-form textarea {
+  min-height: 72px;
+}
+
+.payment-request-modal-panel {
+  width: min(100%, 760px);
+  max-width: 760px;
+}
+
 .inventory-modal-form .modal-section:nth-of-type(2) {
   order: 3;
 }

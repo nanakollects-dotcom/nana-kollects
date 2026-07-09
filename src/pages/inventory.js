@@ -247,7 +247,6 @@ function inventoryForm(store) {
               <label>
                 Cost
                 <input type="number" name="cost" min="0" step="0.01" ${locked ? "disabled" : ""} />
-                <small class="modal-copy">Leave blank if purchase cost is not yet known.</small>
                 <small class="cost-pending-label" data-cost-pending-indicator hidden>Cost Pending</small>
               </label>
 

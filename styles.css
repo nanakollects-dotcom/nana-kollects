@@ -2518,31 +2518,29 @@ td:nth-child(n + 3) {
   }
 
   .inventory-add-form {
-    grid-template-areas:
-      "header header"
-      "basic inventory"
-      "financial inventory"
-      "footer footer";
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .inventory-add-form .modal-header {
-    grid-area: header;
+  .inventory-modal-form.inventory-add-form .modal-section {
+    grid-column: 1 / -1;
   }
 
   .inventory-add-form .modal-section:nth-of-type(1) {
-    grid-area: basic;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .inventory-add-form .modal-section:nth-of-type(2) {
-    grid-area: financial;
+  .inventory-add-form .modal-section:nth-of-type(1) h3,
+  .inventory-add-form .modal-section:nth-of-type(1) .modal-copy {
+    grid-column: 1 / -1;
   }
 
   .inventory-add-form .modal-section:nth-of-type(3) {
-    grid-area: inventory;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .inventory-add-form .button-row {
-    grid-area: footer;
+  .inventory-add-form .modal-section:nth-of-type(3) h3,
+  .inventory-add-form .modal-section:nth-of-type(3) label:last-child {
+    grid-column: 1 / -1;
   }
 }
 

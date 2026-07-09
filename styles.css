@@ -2480,6 +2480,7 @@ td:nth-child(n + 3) {
   }
 
   .inventory-modal-form .form-row {
+    align-items: start;
     gap: 10px;
   }
 

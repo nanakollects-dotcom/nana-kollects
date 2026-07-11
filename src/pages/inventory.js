@@ -398,7 +398,7 @@ function paymentRequestForm(store) {
           <h3>Customer</h3>
           <div class="payment-request-field-grid">
             <label>Customer Name<input name="customerName" required /></label>
-            <label>Customer Contact<input name="customerContact" required /></label>
+            <label>Mobile Number<input name="customerContact" required /></label>
             <label class="full-span">Shipping Address<textarea name="shippingAddress" rows="2" placeholder="Optional"></textarea></label>
           </div>
         </section>

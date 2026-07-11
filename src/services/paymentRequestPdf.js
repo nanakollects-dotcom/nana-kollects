@@ -3,7 +3,7 @@ import { isPaymentConfigurationComplete, SHIPPING_MODES } from "../core/paymentR
 
 const PAGE = { width: 595.28, height: 841.89 };
 
-const cleanText = (value) => String(value ?? "").replace(/[^\x20-\x7E]/g, " ").trim();
+const cleanText = (value) => String(value ?? "").replace(/[^\x20-\x7E]/g, " ").replace(/\s+/g, " ").trim();
 const pdfMoney = (value) => formatMoney(value).replace(/[^0-9.,-]+/g, "PHP ").trim();
 const dateLabel = (value) => value
   ? new Intl.DateTimeFormat("en-PH", { year: "numeric", month: "short", day: "numeric" }).format(new Date(value))
@@ -27,6 +27,7 @@ async function imageBytes(imageSource) {
     mime: response.headers.get("content-type") || source.toLowerCase(),
   };
 }
+
 export async function createPaymentRequestPdf(request, config) {
   if (!isPaymentConfigurationComplete(config)) {
     throw new Error("Configure GCash details and the GoTyme QR before downloading.");
@@ -44,146 +45,191 @@ export async function createPaymentRequestPdf(request, config) {
   const page = document.addPage([PAGE.width, PAGE.height]);
   const regular = await document.embedFont(StandardFonts.Helvetica);
   const bold = await document.embedFont(StandardFonts.HelveticaBold);
-  const margin = 48;
-  let y = PAGE.height - 48;
+  const margin = 42;
+  const contentWidth = PAGE.width - margin * 2;
+  let y = PAGE.height - 42;
 
-  const text = (value, x, size = 10, font = regular, color = colors.ink) => {
-    page.drawText(cleanText(value), { x, y, size, font, color });
+  const drawText = (value, x, drawY, size = 9, font = regular, color = colors.ink, options = {}) => {
+    page.drawText(cleanText(value), { x, y: drawY, size, font, color, ...options });
   };
-  const rule = () => page.drawLine({
-    start: { x: margin, y },
-    end: { x: PAGE.width - margin, y },
+  const drawRight = (value, rightX, drawY, size = 9, font = regular, color = colors.ink) => {
+    const label = cleanText(value);
+    page.drawText(label, { x: rightX - font.widthOfTextAtSize(label, size), y: drawY, size, font, color });
+  };
+  const rule = (drawY = y) => page.drawLine({
+    start: { x: margin, y: drawY },
+    end: { x: PAGE.width - margin, y: drawY },
     thickness: 0.7,
     color: colors.line,
   });
-  const section = (title) => {
-    y -= 22;
-    text(title.toUpperCase(), margin, 9, bold, colors.muted);
-    y -= 12;
+  const sectionTitle = (title, x, drawY) => drawText(title.toUpperCase(), x, drawY, 8, bold, colors.muted);
+  const detail = (label, value, x, drawY, width = 190) => {
+    if (!value) return drawY;
+    drawText(label, x, drawY, 7.5, regular, colors.muted);
+    drawText(value, x, drawY - 12, 9, bold, colors.ink, { maxWidth: width });
+    return drawY - 29;
   };
-  const pair = (label, value, x = margin, valueX = 180) => {
-    text(label, x, 9, regular, colors.muted);
-    text(value, valueX, 10, bold);
-    y -= 17;
+  const totalRow = (label, value, drawY, strong = false) => {
+    drawText(label, PAGE.width - margin - 190, drawY, strong ? 10 : 8.5, strong ? bold : regular, strong ? colors.ink : colors.muted);
+    drawRight(value, PAGE.width - margin, drawY, strong ? 13 : 9.5, strong ? bold : bold, colors.ink);
+  };
+  const wrapLines = (value, maxChars = 94) => {
+    const words = cleanText(value).split(" ").filter(Boolean);
+    const lines = [];
+    let line = "";
+    words.forEach((word) => {
+      const next = line ? `${line} ${word}` : word;
+      if (next.length > maxChars && line) {
+        lines.push(line);
+        line = word;
+      } else {
+        line = next;
+      }
+    });
+    if (line) lines.push(line);
+    return lines;
   };
 
-  text("NANA KOLLECTS", margin, 20, bold);
-  page.drawText("HOT PICKS. LIMITED PIECES.", {
-    x: margin,
-    y: y - 14,
-    size: 8,
-    font: regular,
-    color: colors.muted,
-  });
-  page.drawText("PAYMENT REQUEST", {
-    x: PAGE.width - margin - bold.widthOfTextAtSize("PAYMENT REQUEST", 15),
-    y,
-    size: 15,
-    font: bold,
-    color: colors.ink,
-  });
-  y -= 34;
-  text(request.requestNumber, margin, 11, bold, colors.accent);
-  y -= 16;
-  rule();
+  drawText("Nana Kollects", margin, y, 20, bold);
+  drawText("Hot Picks. Limited Pieces.", margin, y - 15, 8, regular, colors.muted);
+  drawText(`Payment Request No. ${request.requestNumber}`, margin, y - 31, 9, bold, colors.accent);
 
-  section("Request Details");
-  pair("Date Issued", dateLabel(request.issuedAt));
-  pair("Payment Status", request.status);
-  if (request.validUntil) pair("Valid Until", dateLabel(request.validUntil));
+  drawRight("Payment Request", PAGE.width - margin, y, 16, bold);
+  drawRight(`Status: ${request.status}`, PAGE.width - margin, y - 18, 9, bold, colors.ink);
+  drawRight(`Date Issued: ${dateLabel(request.issuedAt)}`, PAGE.width - margin, y - 32, 8.5, regular, colors.muted);
+  if (request.validUntil) drawRight(`Valid Until: ${dateLabel(request.validUntil)}`, PAGE.width - margin, y - 45, 8.5, regular, colors.muted);
+  y -= request.validUntil ? 64 : 52;
+  rule(y);
 
-  section("Customer");
-  pair("Customer Name", request.customerName);
-  pair("Customer Contact", request.customerContact);
-  if (request.shippingAddress) pair("Shipping Address", request.shippingAddress);
-
-  section("Order Details");
-  pair("Item", request.itemName);
-  pair("Quantity", "1");
-  pair("Item Price", pdfMoney(request.itemPrice));
-
-  section("Totals");
-  pair("Subtotal", pdfMoney(request.itemPrice));
-  if (request.shippingMode === SHIPPING_MODES.TO_FOLLOW) pair("Shipping Fee", "To follow");
-  if (request.shippingMode === SHIPPING_MODES.FEE_NOW && request.shippingFee > 0) pair("Shipping Fee", pdfMoney(request.shippingFee));
-  if (request.courier && request.shippingMode !== SHIPPING_MODES.PICKUP) pair("Courier", request.courier);
-  if (request.discount > 0) pair("Discount", `- ${pdfMoney(request.discount)}`);
-  y -= 2;
-  page.drawRectangle({
-    x: margin,
-    y: y - 30,
-    width: PAGE.width - margin * 2,
-    height: 42,
-    color: colors.pale,
-  });
-  text(request.shippingMode === SHIPPING_MODES.TO_FOLLOW ? "AMOUNT DUE NOW" : "TOTAL AMOUNT DUE", margin + 14, 10, bold);
-  const total = pdfMoney(request.totalAmount);
-  page.drawText(total, {
-    x: PAGE.width - margin - 14 - bold.widthOfTextAtSize(total, 16),
-    y: y - 2,
-    size: 16,
-    font: bold,
-    color: colors.ink,
-  });
-  y -= 50;
-
-  section("Payment Options");
-  const optionTop = y - 12;
-  const optionWidth = (PAGE.width - margin * 2 - 18) / 2;
-  page.drawRectangle({ x: margin, y: optionTop - 118, width: optionWidth, height: 128, borderColor: colors.line, borderWidth: 0.7 });
-  page.drawRectangle({ x: margin + optionWidth + 18, y: optionTop - 118, width: optionWidth, height: 128, borderColor: colors.line, borderWidth: 0.7 });
-
-  y = optionTop - 12;
-  text("GCASH", margin + 14, 11, bold);
-  y -= 24;
-  text("Account Name", margin + 14, 8, regular, colors.muted);
-  y -= 14;
-  text(config.gcashAccountName, margin + 14, 10, bold);
   y -= 22;
-  text("Mobile Number", margin + 14, 8, regular, colors.muted);
-  y -= 14;
-  text(config.gcashMobileNumber, margin + 14, 10, bold);
+  const columnGap = 28;
+  const columnWidth = (contentWidth - columnGap) / 2;
+  sectionTitle("Customer", margin, y);
+  sectionTitle("Request Details", margin + columnWidth + columnGap, y);
+  let leftY = y - 17;
+  let rightY = y - 17;
+  leftY = detail("Customer Name", request.customerName, margin, leftY, columnWidth);
+  if (request.customerContact) leftY = detail("Mobile Number", request.customerContact, margin, leftY, columnWidth);
+  if (request.shippingAddress) leftY = detail("Shipping Address", request.shippingAddress, margin, leftY, columnWidth);
+  rightY = detail("Date Issued", dateLabel(request.issuedAt), margin + columnWidth + columnGap, rightY, columnWidth);
+  rightY = detail("Payment Status", request.status, margin + columnWidth + columnGap, rightY, columnWidth);
+  if (request.validUntil) rightY = detail("Valid Until", dateLabel(request.validUntil), margin + columnWidth + columnGap, rightY, columnWidth);
+  y = Math.min(leftY, rightY) - 6;
+  rule(y);
 
-  const goTymeX = margin + optionWidth + 32;
-  y = optionTop - 12;
-  text("GOTYME / INSTAPAY QR", goTymeX, 11, bold);
+  y -= 22;
+  sectionTitle("Order Details", margin, y);
+  y -= 20;
+  const tableTop = y;
+  page.drawRectangle({ x: margin, y: tableTop - 20, width: contentWidth, height: 24, color: colors.pale });
+  drawText("Item", margin + 10, tableTop - 12, 8, bold, colors.muted);
+  drawText("Qty", margin + 300, tableTop - 12, 8, bold, colors.muted);
+  drawRight("Price", margin + 410, tableTop - 12, 8, bold, colors.muted);
+  drawRight("Amount", PAGE.width - margin - 10, tableTop - 12, 8, bold, colors.muted);
+  y = tableTop - 42;
+  drawText(request.itemName, margin + 10, y, 9.5, bold, colors.ink, { maxWidth: 270 });
+  drawText("1", margin + 303, y, 9.5, regular, colors.ink);
+  drawRight(pdfMoney(request.itemPrice), margin + 410, y, 9.5, regular, colors.ink);
+  drawRight(pdfMoney(request.itemPrice), PAGE.width - margin - 10, y, 9.5, bold, colors.ink);
+  y -= 18;
+  rule(y);
+
+  y -= 22;
+  const totalStart = y;
+  totalRow("Subtotal", pdfMoney(request.itemPrice), totalStart);
+  let totalsY = totalStart - 16;
+  if (request.shippingMode === SHIPPING_MODES.TO_FOLLOW) {
+    totalRow("Shipping Fee", "To follow", totalsY);
+    totalsY -= 16;
+  }
+  if (request.shippingMode === SHIPPING_MODES.FEE_NOW && request.shippingFee > 0) {
+    totalRow("Shipping Fee", pdfMoney(request.shippingFee), totalsY);
+    totalsY -= 16;
+  }
+  if (request.courier && request.shippingMode !== SHIPPING_MODES.PICKUP) {
+    totalRow("Courier", request.courier, totalsY);
+    totalsY -= 16;
+  }
+  if (request.discount > 0) {
+    totalRow("Discount", `-${pdfMoney(request.discount)}`, totalsY);
+    totalsY -= 16;
+  }
+  page.drawLine({
+    start: { x: PAGE.width - margin - 190, y: totalsY + 5 },
+    end: { x: PAGE.width - margin, y: totalsY + 5 },
+    thickness: 0.7,
+    color: colors.line,
+  });
+  totalRow(request.shippingMode === SHIPPING_MODES.TO_FOLLOW ? "Amount Due Now" : "Total Amount Due", pdfMoney(request.totalAmount), totalsY - 12, true);
+  y = totalsY - 34;
+
+  const validityText = request.validUntil
+    ? `This payment request is valid until ${dateLabel(request.validUntil)}. If payment or notice of cancellation is not received by then, the item may be released and future reservations may be declined.`
+    : "Items are reserved only while the payment request remains pending.";
+  wrapLines(validityText, 100).forEach((line) => {
+    drawText(line, margin, y, 7.8, regular, colors.muted);
+    y -= 11;
+  });
+  y -= 8;
+  rule(y);
+
+  y -= 22;
+  sectionTitle("Payment Options", margin, y);
+  y -= 10;
+  const optionTop = y;
+  const optionWidth = (contentWidth - 16) / 2;
+  const optionHeight = 108;
+  page.drawRectangle({ x: margin, y: optionTop - optionHeight, width: optionWidth, height: optionHeight, borderColor: colors.line, borderWidth: 0.7 });
+  page.drawRectangle({ x: margin + optionWidth + 16, y: optionTop - optionHeight, width: optionWidth, height: optionHeight, borderColor: colors.line, borderWidth: 0.7 });
+
+  drawText("GCash", margin + 12, optionTop - 18, 10, bold);
+  drawText("Account Name", margin + 12, optionTop - 36, 7.5, regular, colors.muted);
+  drawText(config.gcashAccountName, margin + 12, optionTop - 49, 9, bold, colors.ink, { maxWidth: optionWidth - 24 });
+  drawText("Mobile Number", margin + 12, optionTop - 68, 7.5, regular, colors.muted);
+  drawText(config.gcashMobileNumber, margin + 12, optionTop - 81, 9, bold);
+
+  const goTymeX = margin + optionWidth + 28;
+  drawText("GoTyme / InstaPay", goTymeX, optionTop - 18, 10, bold);
   const qrData = await imageBytes(config.gotymeQrImage);
   const qr = qrData.mime.includes("png")
     ? await document.embedPng(qrData.bytes)
     : await document.embedJpg(qrData.bytes);
-  const qrSize = 74;
+  const qrSize = 62;
   const qrScale = Math.min(qrSize / qr.width, qrSize / qr.height);
   const qrWidth = qr.width * qrScale;
   const qrHeight = qr.height * qrScale;
   page.drawImage(qr, {
-    x: goTymeX + (qrSize - qrWidth) / 2,
-    y: optionTop - 104 + (qrSize - qrHeight) / 2,
+    x: goTymeX,
+    y: optionTop - 90,
     width: qrWidth,
     height: qrHeight,
   });
   if (config.gotymeAccountName) {
-    page.drawText(cleanText(config.gotymeAccountName), {
-      x: goTymeX + qrSize + 10,
-      y: optionTop - 62,
-      size: 9,
-      font: bold,
-      color: colors.ink,
-      maxWidth: optionWidth - qrSize - 38,
-    });
+    drawText("Account Name", goTymeX + qrSize + 12, optionTop - 42, 7.5, regular, colors.muted);
+    drawText(config.gotymeAccountName, goTymeX + qrSize + 12, optionTop - 56, 8.5, bold, colors.ink, { maxWidth: optionWidth - qrSize - 36 });
   }
 
-  y = optionTop - 142;
-  pair("Payment Reference", request.requestNumber);
-  y -= 3;
-  text("After payment, please send your payment confirmation or transaction reference to Nana Kollects.", margin, 9, regular, colors.muted);
+  y = optionTop - optionHeight - 18;
+  drawText("Payment Reference", margin, y, 7.8, regular, colors.muted);
+  drawText(request.requestNumber, margin + 112, y, 9, bold, colors.ink);
+  y -= 16;
+  drawText("After payment, please send your payment confirmation or transaction reference to Nana Kollects.", margin, y, 8.2, regular, colors.muted, { maxWidth: contentWidth });
   y -= 15;
-
   if (request.customerNote) {
-    y -= 19;
-    text("Note", margin, 9, bold);
-    y -= 14;
-    text(request.customerNote, margin, 9, regular, colors.muted);
+    drawText("Note", margin, y, 8.2, bold, colors.ink);
+    y -= 12;
+    wrapLines(request.customerNote, 104).forEach((line) => {
+      drawText(line, margin, y, 8, regular, colors.muted);
+      y -= 11;
+    });
+    y -= 2;
   }
+
+  const policy = "By proceeding with payment, you confirm that you have read and understood Nana Kollects' FAQs and shop policies posted on our pinned posts and highlights.";
+  wrapLines(policy, 106).forEach((line) => {
+    drawText(line, margin, y, 7.2, regular, colors.muted);
+    y -= 9;
+  });
 
   page.drawLine({
     start: { x: margin, y: 55 },
@@ -194,7 +240,7 @@ export async function createPaymentRequestPdf(request, config) {
   page.drawText("Thank you for shopping with Nana Kollects.", {
     x: margin,
     y: 35,
-    size: 9,
+    size: 8.5,
     font: regular,
     color: colors.muted,
   });

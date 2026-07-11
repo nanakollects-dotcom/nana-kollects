@@ -328,7 +328,7 @@ function inventoryForm(store) {
           ${
             pendingRequest
               ? `
-                <section class="modal-section payment-request-action-panel">
+                <section class="modal-section payment-request-action-panel payment-request-status-card">
                   <h3>Payment Request</h3>
                   <div class="payment-request-inline-details">
                     <div><span>Status</span><strong>${escapeText(pendingRequest.status)}</strong></div>
@@ -337,8 +337,9 @@ function inventoryForm(store) {
                   <div class="request-actions">
                     <button class="table-action" type="button" data-download-request="${pendingRequest.id}">Download</button>
                     <button class="table-action primary-action" type="button" data-paid-request="${pendingRequest.id}">Mark Paid</button>
-                    <button class="table-action danger" type="button" data-cancel-request="${pendingRequest.id}">Cancel Request</button>
+                    <button class="table-action danger" type="button" data-cancel-request="${pendingRequest.id}">Cancel Payment Request</button>
                   </div>
+                  <p class="modal-copy payment-request-helper">This item is reserved while this payment request is pending.</p>
                 </section>
               `
               : ""
@@ -357,7 +358,14 @@ function inventoryForm(store) {
 
           ${
             editingItem
-              ? `
+              ? pendingRequest
+                ? `
+                  <section class="modal-section inventory-action-panel inventory-action-locked-panel">
+                    <h3>Inventory Actions</h3>
+                    <p class="modal-copy">Inventory actions are locked while a payment request is pending. Mark the request as Paid or Cancel it first.</p>
+                  </section>
+                `
+                : `
                 <section class="modal-section inventory-action-panel">
                   <h3>Inventory Actions</h3>
                   <p class="modal-copy">Use these actions to manage sale state, archive, write off, or delete this item.</p>

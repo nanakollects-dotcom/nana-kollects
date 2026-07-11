@@ -2113,6 +2113,42 @@ td:nth-child(n + 3) {
   gap: 6px;
 }
 
+.payment-request-status-card {
+  gap: 10px;
+}
+
+.payment-request-inline-details {
+  display: grid;
+  gap: 6px;
+  max-width: 360px;
+}
+
+.payment-request-inline-details > div {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 12px;
+}
+
+.payment-request-inline-details span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.payment-request-inline-details strong {
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.payment-request-helper {
+  margin-top: 0;
+}
+
+.inventory-action-locked-panel {
+  gap: 8px;
+}
+
 .payment-request-summary > div {
   display: flex;
   align-items: baseline;

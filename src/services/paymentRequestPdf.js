@@ -196,13 +196,13 @@ export async function createPaymentRequestPdf(request, config) {
   const qr = qrData.mime.includes("png")
     ? await document.embedPng(qrData.bytes)
     : await document.embedJpg(qrData.bytes);
-  const qrSize = 116;
+  const qrSize = 132;
   const qrScale = Math.min(qrSize / qr.width, qrSize / qr.height);
   const qrWidth = qr.width * qrScale;
   const qrHeight = qr.height * qrScale;
   page.drawImage(qr, {
     x: goTymeX,
-    y: optionTop - 126,
+    y: optionTop - 132,
     width: qrWidth,
     height: qrHeight,
   });
@@ -252,7 +252,7 @@ export async function createPaymentRequestPdf(request, config) {
     thickness: 0.7,
     color: colors.line,
   });
-  page.drawText("We hope you love your piece. Thank you for shopping with Nana Kollects!", {
+  page.drawText("Thank you for shopping with Nana Kollects!", {
     x: margin,
     y: 35,
     size: 8.5,

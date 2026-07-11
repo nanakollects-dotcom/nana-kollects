@@ -168,47 +168,50 @@ export async function createPaymentRequestPdf(request, config) {
   page.drawRectangle({ x: margin, y: optionTop - optionHeight, width: optionWidth, height: optionHeight, borderColor: colors.line, borderWidth: 0.7 });
   page.drawRectangle({ x: margin + optionWidth + 16, y: optionTop - optionHeight, width: optionWidth, height: optionHeight, borderColor: colors.line, borderWidth: 0.7 });
 
-  drawText("GCash", margin + 12, optionTop - 18, 10, bold);
-  const gcashQrData = await imageBytes(config.gcashQrImage || "/payment/gcash-qr.jpg");
+  const paymentQrSize = 110;
+  const paymentQrY = optionTop - 122;
+  const paymentDetailsY = optionTop - 38;
+  const gcashQrSource = (config.gcashQrImage || "/payment/gcash-qr.png").replace("/payment/gcash-qr.jpg", "/payment/gcash-qr.png");
+  const gcashQrData = await imageBytes(gcashQrSource);
   const gcashQr = gcashQrData.mime.includes("png")
     ? await document.embedPng(gcashQrData.bytes)
     : await document.embedJpg(gcashQrData.bytes);
-  const gcashQrSize = 100;
-  const gcashQrScale = Math.min(gcashQrSize / gcashQr.width, gcashQrSize / gcashQr.height);
+  const gcashQrScale = Math.min(paymentQrSize / gcashQr.width, paymentQrSize / gcashQr.height);
   const gcashQrWidth = gcashQr.width * gcashQrScale;
   const gcashQrHeight = gcashQr.height * gcashQrScale;
   page.drawImage(gcashQr, {
     x: margin + 12,
-    y: optionTop - 126,
+    y: paymentQrY,
     width: gcashQrWidth,
     height: gcashQrHeight,
   });
-  const gcashDetailsX = margin + 12 + gcashQrSize + 10;
-  const gcashDetailsWidth = optionWidth - gcashQrSize - 34;
-  drawText("Account Name", gcashDetailsX, optionTop - 42, 7.5, regular, colors.muted);
-  drawText(config.gcashAccountName, gcashDetailsX, optionTop - 56, 8.2, bold, colors.ink, { maxWidth: gcashDetailsWidth });
-  drawText("Mobile Number", gcashDetailsX, optionTop - 80, 7.5, regular, colors.muted);
-  drawText(config.gcashMobileNumber, gcashDetailsX, optionTop - 94, 8.2, bold, colors.ink, { maxWidth: gcashDetailsWidth });
+  const gcashDetailsX = margin + 12 + paymentQrSize + 10;
+  const gcashDetailsWidth = optionWidth - paymentQrSize - 34;
+  drawText("Account Name", gcashDetailsX, paymentDetailsY, 7.5, regular, colors.muted);
+  drawText(config.gcashAccountName, gcashDetailsX, paymentDetailsY - 14, 8.2, bold, colors.ink, { maxWidth: gcashDetailsWidth });
+  drawText("Mobile Number", gcashDetailsX, paymentDetailsY - 38, 7.5, regular, colors.muted);
+  drawText(config.gcashMobileNumber, gcashDetailsX, paymentDetailsY - 52, 8.2, bold, colors.ink, { maxWidth: gcashDetailsWidth });
 
   const goTymeX = margin + optionWidth + 28;
-  drawText("GoTyme / InstaPay", goTymeX, optionTop - 18, 10, bold);
-  const qrData = await imageBytes(config.gotymeQrImage);
+  const goTymeQrSource = String(config.gotymeQrImage || "/payment/gotyme-instapay-qr.png").replace("/payment/gotyme-instapay-qr.jpg", "/payment/gotyme-instapay-qr.png");
+  const qrData = await imageBytes(goTymeQrSource);
   const qr = qrData.mime.includes("png")
     ? await document.embedPng(qrData.bytes)
     : await document.embedJpg(qrData.bytes);
-  const qrSize = 132;
-  const qrScale = Math.min(qrSize / qr.width, qrSize / qr.height);
+  const qrScale = Math.min(paymentQrSize / qr.width, paymentQrSize / qr.height);
   const qrWidth = qr.width * qrScale;
   const qrHeight = qr.height * qrScale;
   page.drawImage(qr, {
     x: goTymeX,
-    y: optionTop - 132,
+    y: paymentQrY,
     width: qrWidth,
     height: qrHeight,
   });
   if (config.gotymeAccountName) {
-    drawText("Account Name", goTymeX + qrSize + 10, optionTop - 42, 7.5, regular, colors.muted);
-    drawText(config.gotymeAccountName, goTymeX + qrSize + 10, optionTop - 56, 8.2, bold, colors.ink, { maxWidth: optionWidth - qrSize - 34 });
+    const goTymeDetailsX = goTymeX + paymentQrSize + 10;
+    const goTymeDetailsWidth = optionWidth - paymentQrSize - 34;
+    drawText("Account Name", goTymeDetailsX, paymentDetailsY, 7.5, regular, colors.muted);
+    drawText(config.gotymeAccountName, goTymeDetailsX, paymentDetailsY - 14, 8.2, bold, colors.ink, { maxWidth: goTymeDetailsWidth });
   }
 
   y = optionTop - optionHeight - 10;
@@ -252,7 +255,7 @@ export async function createPaymentRequestPdf(request, config) {
     thickness: 0.7,
     color: colors.line,
   });
-  page.drawText("Thank you for shopping with Nana Kollects!", {
+  page.drawText("We hope you love your piece. Thank you for shopping with Nana Kollects!", {
     x: margin,
     y: 35,
     size: 8.5,

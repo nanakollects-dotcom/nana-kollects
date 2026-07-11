@@ -34,7 +34,7 @@ export const DEFAULT_PAYMENT_CONFIG = {
   gcashAccountName: "Ma. Christine Albaladejo",
   gcashMobileNumber: "09615030112",
   gotymeAccountName: "Ma. Christine Albaladejo",
-  gotymeQrImage: "/payment/gotyme-instapay-qr.jpg",
+  gotymeQrImage: "/payment/gotyme-instapay-qr.png",
 };
 
 export function paymentMoney(value) {

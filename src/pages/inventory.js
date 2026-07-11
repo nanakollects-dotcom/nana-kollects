@@ -323,6 +323,17 @@ function inventoryForm(store) {
           </section>
 
           ${
+            editingItem && itemStatus === STATUSES.AVAILABLE && !hasPendingPaymentRequest(store, editingItem.id)
+              ? `
+                <section class="modal-section payment-request-action-panel">
+                  <h3>Payment Request</h3>
+                  <button class="table-action" type="button" data-create-request="${editingItem.id}">Create Payment Request</button>
+                </section>
+              `
+              : ""
+          }
+
+          ${
             editingItem
               ? `
                 <section class="modal-section inventory-action-panel">
@@ -599,7 +610,6 @@ function renderInventoryResults(store) {
           <td class="${ageClass(item)}">${formatAge(item)}</td>
 
           <td class="actions-cell">
-            ${item.status === STATUSES.AVAILABLE ? `<button class="table-action" data-create-request="${item.id}" title="Create Payment Request">Request</button>` : ""}
             <button class="table-action primary-action" data-edit="${item.id}" title="Edit">
               Edit
             </button>
@@ -635,7 +645,6 @@ function renderInventoryResults(store) {
           </div>
 
           <div class="record-actions">
-            ${item.status === STATUSES.AVAILABLE ? `<button class="table-action" data-create-request="${item.id}">Create Payment Request</button>` : ""}
             <button class="table-action primary-action" data-edit="${item.id}">
               Edit
             </button>
@@ -980,6 +989,9 @@ export function bindInventoryPage(root, store, notify, refresh) {
           notify("Set up payment details before creating a request.", true);
         } else {
           paymentRequestItemId = button.dataset.createRequest;
+          editingId = null;
+          isModalOpen = false;
+          inventoryDraft = null;
         }
         refresh();
       }

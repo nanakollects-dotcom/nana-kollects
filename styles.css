@@ -2167,12 +2167,16 @@ td:nth-child(n + 3) {
   order: 2;
 }
 
-.inventory-modal-form .inventory-action-panel {
+.inventory-modal-form .payment-request-action-panel {
   order: 4;
 }
 
-.inventory-modal-form .button-row {
+.inventory-modal-form .inventory-action-panel {
   order: 5;
+}
+
+.inventory-modal-form .button-row {
+  order: 6;
 }
 
 .snapshot-list small {
@@ -2599,9 +2603,14 @@ td:nth-child(n + 3) {
     order: 3;
   }
 
-  .inventory-modal-form .inventory-action-panel {
+  .inventory-modal-form .payment-request-action-panel {
     grid-column: 1 / -1;
     order: 4;
+  }
+
+  .inventory-modal-form .inventory-action-panel {
+    grid-column: 1 / -1;
+    order: 5;
   }
 
   .inventory-modal-form .inventory-action-grid {
@@ -2613,7 +2622,7 @@ td:nth-child(n + 3) {
   }
 
   .inventory-modal-form .button-row {
-    order: 5;
+    order: 6;
     margin-top: 2px;
   }
 

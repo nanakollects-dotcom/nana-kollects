@@ -224,6 +224,9 @@ function inventoryForm(store) {
   const collections = collectionOptions(store);
   const canSubmit = (!locked || soldReadOnly) && collections.length > 0;
   const itemStatus = editingItem?.status || STATUSES.AVAILABLE;
+  const pendingRequest = editingItem
+    ? (store.paymentRequests || []).find((request) => request.itemId === editingItem.id && request.status === "Pending")
+    : null;
 
   return `
     ${modal(
@@ -323,7 +326,26 @@ function inventoryForm(store) {
           </section>
 
           ${
-            editingItem && itemStatus === STATUSES.AVAILABLE && !hasPendingPaymentRequest(store, editingItem.id)
+            pendingRequest
+              ? `
+                <section class="modal-section payment-request-action-panel">
+                  <h3>Payment Request</h3>
+                  <div class="payment-request-inline-details">
+                    <div><span>Status</span><strong>${escapeText(pendingRequest.status)}</strong></div>
+                    <div><span>Request No</span><strong>${escapeText(pendingRequest.requestNumber)}</strong></div>
+                  </div>
+                  <div class="request-actions">
+                    <button class="table-action" type="button" data-download-request="${pendingRequest.id}">Download</button>
+                    <button class="table-action primary-action" type="button" data-paid-request="${pendingRequest.id}">Mark Paid</button>
+                    <button class="table-action danger" type="button" data-cancel-request="${pendingRequest.id}">Cancel Request</button>
+                  </div>
+                </section>
+              `
+              : ""
+          }
+
+          ${
+            editingItem && itemStatus === STATUSES.AVAILABLE && !pendingRequest
               ? `
                 <section class="modal-section payment-request-action-panel">
                   <h3>Payment Request</h3>
@@ -1033,7 +1055,7 @@ export function bindInventoryPage(root, store, notify, refresh) {
       }
 
       if (button.dataset.cancelRequest) {
-        if (!confirm("Cancel this Payment Request and release the reserved item?")) return;
+        if (!confirm("Cancel this payment request and make the item available again?")) return;
         await cancelPaymentRequest(button.dataset.cancelRequest);
         notify("Payment Request cancelled. Item released.");
         refresh();

@@ -78,6 +78,22 @@ function currentStore() {
   return loadStore();
 }
 
+async function assertNoPendingPaymentRequest(userId, itemId) {
+  const { data, error } = await supabase
+    .from("payment_requests")
+    .select("id")
+    .eq("inventory_item_id", itemId)
+    .eq("user_id", userId)
+    .eq("status", "Pending")
+    .limit(1);
+
+  if (error) throw error;
+  assert(
+    !data?.length,
+    "This item has a pending payment request. Mark it Paid or Cancel the request before changing its inventory status.",
+  );
+}
+
 function highestSkuNumber(store) {
   return (store.inventory || [])
     .map((item) => item.sku)
@@ -644,6 +660,7 @@ export async function changeSupabaseInventoryStatus(itemId, nextStatus, paymentS
   const store = currentStore();
   const item = store.inventory.find((entry) => entry.id === itemId);
   assert(item, "Item not found.");
+  await assertNoPendingPaymentRequest(userId, itemId);
 
   const collectionId = item.collectionId ? collectionUuidFor(store, item.collectionId) : null;
 
@@ -847,6 +864,7 @@ export async function deleteSupabaseInventoryItem(itemId) {
   const store = currentStore();
   const item = store.inventory.find((entry) => entry.id === itemId);
   assert(item, "Item not found.");
+  await assertNoPendingPaymentRequest(userId, itemId);
 
   const relatedDeletes = await Promise.all([
     supabase.from("sales").delete().eq("inventory_item_id", itemId).eq("user_id", userId),

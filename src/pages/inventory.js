@@ -79,6 +79,7 @@ const matchesCostFilter = (item) => {
   return true;
 };
 
+const pendingPaymentRequestMessage = "This item has a pending payment request. Mark it Paid or Cancel the request before changing its inventory status.";
 const missingValue = "&mdash;";
 const costPendingIndicator = `<small class="cost-pending-label">Cost Pending</small>`;
 const formatCost = (item) => isCostPending(item) ? `${missingValue}${costPendingIndicator}` : formatMoney(item.cost);
@@ -101,6 +102,10 @@ const canRunStatusAction = (current, next) => {
 };
 
 const actionDisabled = (current, next) => canRunStatusAction(current, next) ? "" : "disabled";
+
+const hasPendingPaymentRequest = (store, itemId) => (store.paymentRequests || []).some(
+  (request) => request.itemId === itemId && request.status === "Pending",
+);
 
 const requestStatusClass = (status) => {
   if (status === "Paid") return "green-pill";
@@ -1006,6 +1011,10 @@ export function bindInventoryPage(root, store, notify, refresh) {
 
       if (button.dataset.delete) {
         const item = store.inventory.find((entry) => entry.id === button.dataset.delete);
+        if (hasPendingPaymentRequest(store, button.dataset.delete)) {
+          notify(pendingPaymentRequestMessage, true);
+          return;
+        }
         const hasHistory = Boolean(
           item &&
           (
@@ -1039,6 +1048,11 @@ export function bindInventoryPage(root, store, notify, refresh) {
         const itemId = button.dataset.itemId;
         const platform = root.querySelector("#inventory-action-platform")?.value || "";
         const payment = root.querySelector("#inventory-action-payment")?.value || PAYMENT_STATUSES.PAID;
+
+        if (hasPendingPaymentRequest(store, itemId)) {
+          notify(pendingPaymentRequestMessage, true);
+          return;
+        }
 
         if (nextStatus === STATUSES.SOLD && !platform) {
           notify("Choose a platform before marking sold.", true);

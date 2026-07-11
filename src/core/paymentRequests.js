@@ -18,13 +18,14 @@ export const SHIPPING_MODE_LABELS = {
   [SHIPPING_MODES.PICKUP]: "No shipping / pickup",
 };
 
-export const COURIER_OPTIONS = ["To follow", "J&T", "GoGo Xpress", "Lalamove", "Other"];
+export const COURIER_OPTIONS = ["J&T", "GoGo Xpress", "Lalamove", "Other"];
 export function displayCourier(value) {
   const courier = String(value || "").trim();
   const legacy = {
-    "To follow": "Courier to follow",
+    "To follow": "To be confirmed",
+    "Courier to follow": "To be confirmed",
     "J&T": "J&T Express",
-    "Other": "Other courier",
+    "Other courier": "Other",
   };
   return legacy[courier] || courier;
 }

@@ -1,5 +1,5 @@
 import { formatMoney } from "../components/format.js";
-import { displayCourier, isPaymentConfigurationComplete, SHIPPING_MODE_LABELS, SHIPPING_MODES } from "../core/paymentRequests.js";
+import { displayCourier, isPaymentConfigurationComplete, SHIPPING_MODES } from "../core/paymentRequests.js";
 
 const PAGE = { width: 595.28, height: 841.89 };
 
@@ -107,6 +107,8 @@ export async function createPaymentRequestPdf(request, config) {
   leftY = detail("Customer Name", request.customerName, margin, leftY, columnWidth);
   if (request.customerContact) leftY = detail("Mobile Number", request.customerContact, margin, leftY, columnWidth);
   if (request.shippingAddress) leftY = detail("Shipping Address", request.shippingAddress, margin, leftY, columnWidth);
+  const courierLabel = request.shippingMode === SHIPPING_MODES.PICKUP ? "" : displayCourier(request.courier);
+  if (courierLabel) leftY = detail("Courier", courierLabel, margin, leftY, columnWidth);
   rightY = detail("Date Issued", dateLabel(request.issuedAt), margin + columnWidth + columnGap, rightY, columnWidth);
   rightY = detail("Payment Status", request.status, margin + columnWidth + columnGap, rightY, columnWidth);
   if (request.validUntil) rightY = detail("Valid Until", dateLabel(request.validUntil), margin + columnWidth + columnGap, rightY, columnWidth);
@@ -142,14 +144,7 @@ export async function createPaymentRequestPdf(request, config) {
     totalRow("Shipping Fee", pdfMoney(request.shippingFee), totalsY);
     totalsY -= 16;
   }
-  if (request.courier && request.shippingMode !== SHIPPING_MODES.PICKUP) {
-    totalRow("Courier", displayCourier(request.courier), totalsY);
-    totalsY -= 16;
-  }
-  if (request.shippingMode === SHIPPING_MODES.PICKUP) {
-    totalRow("Shipping", SHIPPING_MODE_LABELS[SHIPPING_MODES.PICKUP], totalsY);
-    totalsY -= 16;
-  }
+
   if (request.discount > 0) {
     totalRow("Discount", `-${pdfMoney(request.discount)}`, totalsY);
     totalsY -= 16;
@@ -200,16 +195,16 @@ export async function createPaymentRequestPdf(request, config) {
     drawText(config.gotymeAccountName, goTymeX + qrSize + 10, optionTop - 56, 8.2, bold, colors.ink, { maxWidth: optionWidth - qrSize - 34 });
   }
 
-  y = optionTop - optionHeight - 12;
+  y = optionTop - optionHeight - 10;
   const validityText = request.validUntil
-    ? `This payment request is valid until ${dateLabel(request.validUntil)}. If payment or notice of cancellation is not received by then, the item may be released and future reservations may be declined.`
+    ? `This request is valid until ${dateLabel(request.validUntil)}; unpaid or unconfirmed items may be released after this date.`
     : "Items are reserved only while the payment request remains pending.";
   const reminderLines = [
-    "After payment, please send your payment confirmation or transaction reference to Nana Kollects.",
+    "Please send your payment confirmation or transaction reference after payment.",
     validityText,
-    "By proceeding with payment, you confirm that you have read and understood Nana Kollects' FAQs and shop policies posted on our pinned posts and highlights.",
-  ].flatMap((line) => wrapLines(line, 104));
-  const reminderHeight = 26 + reminderLines.length * 9;
+    "By paying, you confirm that you have read Nana Kollects' FAQs and shop policies in our pinned posts/highlights.",
+  ].flatMap((line) => wrapLines(line, 118));
+  const reminderHeight = 24 + reminderLines.length * 9;
   page.drawRectangle({
     x: margin,
     y: y - reminderHeight,
@@ -242,7 +237,7 @@ export async function createPaymentRequestPdf(request, config) {
     thickness: 0.7,
     color: colors.line,
   });
-  page.drawText("Thank you for shopping with Nana Kollects. We hope you love your piece.", {
+  page.drawText("We hope you love your piece. Thank you for shopping with Nana Kollects!", {
     x: margin,
     y: 35,
     size: 8.5,

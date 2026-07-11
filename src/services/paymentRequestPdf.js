@@ -94,7 +94,6 @@ export async function createPaymentRequestPdf(request, config) {
   drawText("Hot Picks. Limited Pieces.", margin, y - 15, 8, regular, colors.muted);
   drawText(`Payment Request No. ${request.requestNumber}`, margin, y - 31, 9, bold, colors.accent);
 
-  drawRight("Payment Request", PAGE.width - margin, y, 16, bold);
   y -= 48;
   rule(y);
 
@@ -197,21 +196,32 @@ export async function createPaymentRequestPdf(request, config) {
     drawText(config.gotymeAccountName, goTymeX + qrSize + 10, optionTop - 56, 8.2, bold, colors.ink, { maxWidth: optionWidth - qrSize - 34 });
   }
 
-  y = optionTop - optionHeight - 14;
-  drawText("Payment Reference", margin, y, 7.8, regular, colors.muted);
-  drawText(request.requestNumber, margin + 112, y, 9, bold, colors.ink);
-  y -= 16;
-  drawText("After payment, please send your payment confirmation or transaction reference to Nana Kollects.", margin, y, 8.2, regular, colors.muted, { maxWidth: contentWidth });
-  y -= 15;
-
+  y = optionTop - optionHeight - 12;
   const validityText = request.validUntil
     ? `This payment request is valid until ${dateLabel(request.validUntil)}. If payment or notice of cancellation is not received by then, the item may be released and future reservations may be declined.`
     : "Items are reserved only while the payment request remains pending.";
-  wrapLines(validityText, 100).forEach((line) => {
-    drawText(line, margin, y, 7.8, regular, colors.muted);
-    y -= 11;
+  const reminderLines = [
+    "After payment, please send your payment confirmation or transaction reference to Nana Kollects.",
+    validityText,
+    "By proceeding with payment, you confirm that you have read and understood Nana Kollects' FAQs and shop policies posted on our pinned posts and highlights.",
+  ].flatMap((line) => wrapLines(line, 104));
+  const reminderHeight = 26 + reminderLines.length * 9;
+  page.drawRectangle({
+    x: margin,
+    y: y - reminderHeight,
+    width: contentWidth,
+    height: reminderHeight,
+    color: colors.pale,
+    borderColor: colors.line,
+    borderWidth: 0.7,
   });
-  y -= 3;
+  drawText("PAYMENT REMINDERS", margin + 12, y - 15, 8, bold, colors.muted);
+  let reminderY = y - 29;
+  reminderLines.forEach((line) => {
+    drawText(line, margin + 12, reminderY, 7.5, regular, colors.muted);
+    reminderY -= 9;
+  });
+  y -= reminderHeight + 10;
   if (request.customerNote) {
     drawText("Note", margin, y, 8.2, bold, colors.ink);
     y -= 12;
@@ -222,19 +232,13 @@ export async function createPaymentRequestPdf(request, config) {
     y -= 2;
   }
 
-  const policy = "By proceeding with payment, you confirm that you have read and understood Nana Kollects' FAQs and shop policies posted on our pinned posts and highlights.";
-  wrapLines(policy, 106).forEach((line) => {
-    drawText(line, margin, y, 7.2, regular, colors.muted);
-    y -= 9;
-  });
-
   page.drawLine({
     start: { x: margin, y: 55 },
     end: { x: PAGE.width - margin, y: 55 },
     thickness: 0.7,
     color: colors.line,
   });
-  page.drawText("Thank you for shopping with Nana Kollects.", {
+  page.drawText("Thank you for shopping with Nana Kollects. We hope you love your piece.", {
     x: margin,
     y: 35,
     size: 8.5,

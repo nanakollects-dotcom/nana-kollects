@@ -164,7 +164,7 @@ export async function createPaymentRequestPdf(request, config) {
   y -= 8;
   const optionTop = y;
   const optionWidth = (contentWidth - 16) / 2;
-  const optionHeight = 104;
+  const optionHeight = 132;
   page.drawRectangle({ x: margin, y: optionTop - optionHeight, width: optionWidth, height: optionHeight, borderColor: colors.line, borderWidth: 0.7 });
   page.drawRectangle({ x: margin + optionWidth + 16, y: optionTop - optionHeight, width: optionWidth, height: optionHeight, borderColor: colors.line, borderWidth: 0.7 });
 
@@ -180,13 +180,13 @@ export async function createPaymentRequestPdf(request, config) {
   const qr = qrData.mime.includes("png")
     ? await document.embedPng(qrData.bytes)
     : await document.embedJpg(qrData.bytes);
-  const qrSize = 82;
+  const qrSize = 116;
   const qrScale = Math.min(qrSize / qr.width, qrSize / qr.height);
   const qrWidth = qr.width * qrScale;
   const qrHeight = qr.height * qrScale;
   page.drawImage(qr, {
     x: goTymeX,
-    y: optionTop - 98,
+    y: optionTop - 126,
     width: qrWidth,
     height: qrHeight,
   });
@@ -197,10 +197,9 @@ export async function createPaymentRequestPdf(request, config) {
 
   y = optionTop - optionHeight - 10;
   const validityText = request.validUntil
-    ? `This request is valid until ${dateLabel(request.validUntil)}; unpaid or unconfirmed items may be released after this date.`
-    : "Items are reserved only while the payment request remains pending.";
+    ? `This request is valid until ${dateLabel(request.validUntil)}. Unpaid reservations without cancellation notice may be released, declined for future orders, and may be included in Nana Kollects' buyer advisory posts in accordance with our shop policies.`
+    : "Items are reserved only while the payment request remains pending. Unpaid reservations without cancellation notice may be released, declined for future orders, and may be included in Nana Kollects' buyer advisory posts in accordance with our shop policies.";
   const reminderLines = [
-    "Please send your payment confirmation or transaction reference after payment.",
     validityText,
     "By paying, you confirm that you have read Nana Kollects' FAQs and shop policies in our pinned posts/highlights.",
   ].flatMap((line) => wrapLines(line, 118));

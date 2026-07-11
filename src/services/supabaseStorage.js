@@ -1,6 +1,7 @@
 import { supabase } from "./supabaseClient.js";
 import { emptyStore, loadStore, normalizeStore } from "./storage.js";
 import { hasKnownCost, normalizeCostInput } from "../core/costs.js";
+import { COURIER_OPTIONS, DEFAULT_PAYMENT_CONFIG, normalizeShippingMode, SHIPPING_MODES } from "../core/paymentRequests.js";
 
 const STATUSES = {
   AVAILABLE: "Available",
@@ -292,6 +293,8 @@ export async function loadSupabaseStore() {
       itemName: request.item_name_snapshot,
       itemPrice: Number(request.item_price || 0),
       shippingFee: Number(request.shipping_fee || 0),
+      shippingMode: normalizeShippingMode(request.shipping_mode),
+      courier: request.courier || "",
       discount: Number(request.discount || 0),
       totalAmount: Number(request.total_amount || 0),
       status: request.status,
@@ -305,10 +308,12 @@ export async function loadSupabaseStore() {
     })),
 
     paymentConfig: {
-      gcashAccountName: String(paymentConfigSetting?.value?.gcashAccountName || ""),
-      gcashMobileNumber: String(paymentConfigSetting?.value?.gcashMobileNumber || ""),
-      gotymeAccountName: String(paymentConfigSetting?.value?.gotymeAccountName || ""),
-      gotymeQrImage: String(paymentConfigSetting?.value?.gotymeQrImage || ""),
+      ...DEFAULT_PAYMENT_CONFIG,
+      ...(paymentConfigSetting?.value || {}),
+      gcashAccountName: String(paymentConfigSetting?.value?.gcashAccountName || DEFAULT_PAYMENT_CONFIG.gcashAccountName),
+      gcashMobileNumber: String(paymentConfigSetting?.value?.gcashMobileNumber || DEFAULT_PAYMENT_CONFIG.gcashMobileNumber),
+      gotymeAccountName: String(paymentConfigSetting?.value?.gotymeAccountName || DEFAULT_PAYMENT_CONFIG.gotymeAccountName),
+      gotymeQrImage: String(paymentConfigSetting?.value?.gotymeQrImage || DEFAULT_PAYMENT_CONFIG.gotymeQrImage),
     },
 
     meta: {
@@ -328,7 +333,7 @@ export async function saveSupabasePaymentConfig(input) {
 
   assert(value.gcashAccountName, "GCash account name is required.");
   assert(value.gcashMobileNumber, "GCash mobile number is required.");
-  assert(value.gotymeQrImage.startsWith("data:image/"), "Upload a GoTyme QR image.");
+  assert(value.gotymeQrImage.startsWith("data:image/") || value.gotymeQrImage.startsWith("/payment/"), "Upload a GoTyme QR image.");
 
   const { error } = await supabase.from("settings").upsert(
     { user_id: userId, key: "payment_config", value },
@@ -339,9 +344,13 @@ export async function saveSupabasePaymentConfig(input) {
 }
 
 export async function createSupabasePaymentRequest(input) {
+  const shippingMode = normalizeShippingMode(input.shippingMode);
+  const courier = input.courier === "Other"
+    ? String(input.customCourier || "").trim()
+    : String(input.courier || "").trim();
   const amounts = {
     itemPrice: money(input.itemPrice),
-    shippingFee: money(input.shippingFee),
+    shippingFee: shippingMode === SHIPPING_MODES.FEE_NOW ? money(input.shippingFee) : 0,
     discount: money(input.discount),
   };
 
@@ -350,6 +359,7 @@ export async function createSupabasePaymentRequest(input) {
   assert(amounts.itemPrice >= 0, "Selling price must be zero or higher.");
   assert(amounts.shippingFee >= 0, "Shipping fee must be zero or higher.");
   assert(amounts.discount >= 0, "Discount must be zero or higher.");
+  assert(!courier || COURIER_OPTIONS.includes(input.courier) || input.courier === "Other", "Choose a valid courier.");
   assert(amounts.itemPrice + amounts.shippingFee - amounts.discount >= 0, "Total amount due cannot be negative.");
 
   const { data, error } = await supabase.rpc("create_payment_request", {
@@ -359,6 +369,8 @@ export async function createSupabasePaymentRequest(input) {
     p_shipping_address: String(input.shippingAddress || "").trim(),
     p_item_price: amounts.itemPrice,
     p_shipping_fee: amounts.shippingFee,
+    p_shipping_mode: shippingMode,
+    p_courier: courier,
     p_discount: amounts.discount,
     p_valid_until: input.validUntil || null,
     p_customer_note: String(input.customerNote || "").trim(),

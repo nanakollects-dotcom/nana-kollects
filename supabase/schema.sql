@@ -176,6 +176,8 @@ create table if not exists public.payment_requests (
   item_name_snapshot text not null,
   item_price numeric(12,2) not null,
   shipping_fee numeric(12,2) not null default 0,
+  shipping_mode text not null default 'fee_now',
+  courier text,
   discount numeric(12,2) not null default 0,
   total_amount numeric(12,2) not null,
   status text not null default 'Pending',
@@ -191,6 +193,7 @@ create table if not exists public.payment_requests (
   constraint payment_requests_shipping_nonnegative check (shipping_fee >= 0),
   constraint payment_requests_discount_nonnegative check (discount >= 0),
   constraint payment_requests_total_nonnegative check (total_amount >= 0),
+  constraint payment_requests_shipping_mode_check check (shipping_mode in ('fee_now', 'to_follow', 'pickup')),
   constraint payment_requests_status_check check (status in ('Pending', 'Paid', 'Cancelled')),
   constraint payment_requests_method_check check (payment_method is null or payment_method in ('GCash', 'GoTyme'))
 );

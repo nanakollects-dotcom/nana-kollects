@@ -1,23 +1,32 @@
 import { formatMoney } from "../components/format.js";
-import { isPaymentConfigurationComplete } from "../core/paymentRequests.js";
+import { isPaymentConfigurationComplete, SHIPPING_MODES } from "../core/paymentRequests.js";
 
 const PAGE = { width: 595.28, height: 841.89 };
 
 const cleanText = (value) => String(value ?? "").replace(/[^\x20-\x7E]/g, " ").trim();
-const pdfMoney = (value) => formatMoney(value).replace("₱", "PHP ");
+const pdfMoney = (value) => formatMoney(value).replace(/[^0-9.,-]+/g, "PHP ").trim();
 const dateLabel = (value) => value
   ? new Intl.DateTimeFormat("en-PH", { year: "numeric", month: "short", day: "numeric" }).format(new Date(value))
   : "";
 
-function dataUrlBytes(dataUrl) {
-  const [header, payload] = String(dataUrl || "").split(",");
-  if (!header || !payload) throw new Error("Configure a valid GoTyme QR image.");
-  const binary = atob(payload);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-  return { bytes, mime: header.toLowerCase() };
-}
+async function imageBytes(imageSource) {
+  const source = String(imageSource || "");
+  if (source.startsWith("data:image/")) {
+    const [header, payload] = source.split(",");
+    if (!header || !payload) throw new Error("Configure a valid GoTyme QR image.");
+    const binary = atob(payload);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+    return { bytes, mime: header.toLowerCase() };
+  }
 
+  const response = await fetch(source);
+  if (!response.ok) throw new Error("Configure a valid GoTyme QR image.");
+  return {
+    bytes: new Uint8Array(await response.arrayBuffer()),
+    mime: response.headers.get("content-type") || source.toLowerCase(),
+  };
+}
 export async function createPaymentRequestPdf(request, config) {
   if (!isPaymentConfigurationComplete(config)) {
     throw new Error("Configure GCash details and the GoTyme QR before downloading.");
@@ -95,7 +104,9 @@ export async function createPaymentRequestPdf(request, config) {
 
   section("Totals");
   pair("Subtotal", pdfMoney(request.itemPrice));
-  if (request.shippingFee > 0) pair("Shipping Fee", pdfMoney(request.shippingFee));
+  if (request.shippingMode === SHIPPING_MODES.TO_FOLLOW) pair("Shipping Fee", "To follow");
+  if (request.shippingMode === SHIPPING_MODES.FEE_NOW && request.shippingFee > 0) pair("Shipping Fee", pdfMoney(request.shippingFee));
+  if (request.courier && request.shippingMode !== SHIPPING_MODES.PICKUP) pair("Courier", request.courier);
   if (request.discount > 0) pair("Discount", `- ${pdfMoney(request.discount)}`);
   y -= 2;
   page.drawRectangle({
@@ -105,7 +116,7 @@ export async function createPaymentRequestPdf(request, config) {
     height: 42,
     color: colors.pale,
   });
-  text("TOTAL AMOUNT DUE", margin + 14, 10, bold);
+  text(request.shippingMode === SHIPPING_MODES.TO_FOLLOW ? "AMOUNT DUE NOW" : "TOTAL AMOUNT DUE", margin + 14, 10, bold);
   const total = pdfMoney(request.totalAmount);
   page.drawText(total, {
     x: PAGE.width - margin - 14 - bold.widthOfTextAtSize(total, 16),
@@ -135,8 +146,8 @@ export async function createPaymentRequestPdf(request, config) {
 
   const goTymeX = margin + optionWidth + 32;
   y = optionTop - 12;
-  text("GOTYME", goTymeX, 11, bold);
-  const qrData = dataUrlBytes(config.gotymeQrImage);
+  text("GOTYME / INSTAPAY QR", goTymeX, 11, bold);
+  const qrData = await imageBytes(config.gotymeQrImage);
   const qr = qrData.mime.includes("png")
     ? await document.embedPng(qrData.bytes)
     : await document.embedJpg(qrData.bytes);
@@ -166,7 +177,7 @@ export async function createPaymentRequestPdf(request, config) {
   y -= 3;
   text("After payment, please send your payment confirmation or transaction reference to Nana Kollects.", margin, 9, regular, colors.muted);
   y -= 15;
-  text("Your item is reserved while payment is pending.", margin, 9, regular, colors.muted);
+
   if (request.customerNote) {
     y -= 19;
     text("Note", margin, 9, bold);

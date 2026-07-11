@@ -1,3 +1,4 @@
+import { DEFAULT_PAYMENT_CONFIG } from "../core/paymentRequests.js";
 const STORAGE_KEY = "nana-kollects-business-tracker:v1";
 const BACKUP_APP_ID = "nana-kollects-business-tracker";
 const BACKUP_VERSION = 1;
@@ -15,12 +16,7 @@ export const emptyStore = () => ({
   logs: [],
   collections: [],
   paymentRequests: [],
-  paymentConfig: {
-    gcashAccountName: "",
-    gcashMobileNumber: "",
-    gotymeAccountName: "",
-    gotymeQrImage: "",
-  },
+  paymentConfig: { ...DEFAULT_PAYMENT_CONFIG },
   meta: {
     lastSkuNumber: 0,
   },

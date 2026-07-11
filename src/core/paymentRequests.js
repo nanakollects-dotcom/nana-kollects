@@ -6,14 +6,40 @@ export const PAYMENT_REQUEST_STATUSES = {
 
 export const PAYMENT_METHODS = ["GCash", "GoTyme"];
 
+export const SHIPPING_MODES = {
+  FEE_NOW: "fee_now",
+  TO_FOLLOW: "to_follow",
+  PICKUP: "pickup",
+};
+
+export const SHIPPING_MODE_LABELS = {
+  [SHIPPING_MODES.FEE_NOW]: "Shipping fee now",
+  [SHIPPING_MODES.TO_FOLLOW]: "Shipping fee to follow",
+  [SHIPPING_MODES.PICKUP]: "No shipping / pickup",
+};
+
+export const COURIER_OPTIONS = ["To follow", "J&T", "GoGo Xpress", "Lalamove", "Other"];
+
+export const DEFAULT_PAYMENT_CONFIG = {
+  gcashAccountName: "Ma. Christine Albaladejo",
+  gcashMobileNumber: "09615030112",
+  gotymeAccountName: "Ma. Christine Albaladejo",
+  gotymeQrImage: "/payment/gotyme-instapay-qr.jpg",
+};
+
 export function paymentMoney(value) {
   const number = Number(value);
   return Number.isFinite(number) ? Math.round(number * 100) / 100 : NaN;
 }
 
-export function calculatePaymentRequestTotal(itemPrice, shippingFee = 0, discount = 0) {
+export function normalizeShippingMode(value) {
+  return Object.values(SHIPPING_MODES).includes(value) ? value : SHIPPING_MODES.FEE_NOW;
+}
+
+export function calculatePaymentRequestTotal(itemPrice, shippingFee = 0, discount = 0, shippingMode = SHIPPING_MODES.FEE_NOW) {
+  const mode = normalizeShippingMode(shippingMode);
   const price = paymentMoney(itemPrice);
-  const shipping = paymentMoney(shippingFee || 0);
+  const shipping = mode === SHIPPING_MODES.FEE_NOW ? paymentMoney(shippingFee || 0) : 0;
   const discountAmount = paymentMoney(discount || 0);
 
   if (![price, shipping, discountAmount].every(Number.isFinite)) {
@@ -35,9 +61,10 @@ export function calculatePaymentRequestTotal(itemPrice, shippingFee = 0, discoun
 }
 
 export function isPaymentConfigurationComplete(config = {}) {
+  const qrImage = String(config.gotymeQrImage || "").trim();
   return Boolean(
     String(config.gcashAccountName || "").trim() &&
     String(config.gcashMobileNumber || "").trim() &&
-    String(config.gotymeQrImage || "").startsWith("data:image/"),
+    (qrImage.startsWith("data:image/") || qrImage.startsWith("/payment/")),
   );
 }

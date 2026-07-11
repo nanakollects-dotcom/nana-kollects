@@ -15,7 +15,7 @@ import {
 } from "../services/repository.js";
 import { bindForm, emptyState, modal, pageHeader } from "../components/ui.js";
 import { formatMoney } from "../components/format.js";
-import { calculatePaymentRequestTotal, isPaymentConfigurationComplete, PAYMENT_METHODS } from "../core/paymentRequests.js";
+import { calculatePaymentRequestTotal, COURIER_OPTIONS, isPaymentConfigurationComplete, PAYMENT_METHODS, SHIPPING_MODE_LABELS, SHIPPING_MODES } from "../core/paymentRequests.js";
 import { createPaymentRequestPdf, downloadPaymentRequestPdf } from "../services/paymentRequestPdf.js";
 
 let editingId = null;
@@ -389,7 +389,7 @@ function paymentRequestForm(store) {
         <div class="modal-header">
           <div>
             <h2>Create Payment Request</h2>
-            <p>${escapeText(item.sku)} · ${escapeText(item.name)}</p>
+            <p>${escapeText(item.sku)} &middot; ${escapeText(item.name)}</p>
           </div>
           <button class="icon-btn" type="button" data-close-payment-request>Close</button>
         </div>
@@ -408,8 +408,23 @@ function paymentRequestForm(store) {
           <label>Item Name<input value="${escapeText(item.name)}" readonly /></label>
           <div class="form-row">
             <label>Selling Price<input type="number" name="itemPrice" min="0" step="0.01" value="${item.price}" required /></label>
-            <label>Shipping Fee<input type="number" name="shippingFee" min="0" step="0.01" value="0" /></label>
+            <label>Shipping Mode
+              <select name="shippingMode">
+                <option value="${SHIPPING_MODES.FEE_NOW}">${SHIPPING_MODE_LABELS[SHIPPING_MODES.FEE_NOW]}</option>
+                <option value="${SHIPPING_MODES.TO_FOLLOW}">${SHIPPING_MODE_LABELS[SHIPPING_MODES.TO_FOLLOW]}</option>
+                <option value="${SHIPPING_MODES.PICKUP}">${SHIPPING_MODE_LABELS[SHIPPING_MODES.PICKUP]}</option>
+              </select>
+            </label>
           </div>
+          <div class="form-row">
+            <label data-shipping-fee-field>Shipping Fee<input type="number" name="shippingFee" min="0" step="0.01" value="0" /></label>
+            <label>Courier
+              <select name="courier">
+                ${COURIER_OPTIONS.map((courier) => `<option value="${escapeText(courier)}">${escapeText(courier)}</option>`).join("")}
+              </select>
+            </label>
+          </div>
+          <label data-custom-courier-field hidden>Custom Courier<input name="customCourier" placeholder="Courier name" /></label>
           <div class="form-row">
             <label>Discount<input type="number" name="discount" min="0" step="0.01" value="0" /></label>
             <label>Valid Until<input type="date" name="validUntil" /></label>
@@ -420,9 +435,10 @@ function paymentRequestForm(store) {
         <section class="modal-section payment-request-summary">
           <h3>Summary</h3>
           <div><span>Subtotal</span><strong data-request-subtotal>${formatMoney(item.price)}</strong></div>
-          <div data-request-shipping-row hidden><span>Shipping Fee</span><strong data-request-shipping>${formatMoney(0)}</strong></div>
+          <div data-request-shipping-row hidden><span data-request-shipping-label>Shipping Fee</span><strong data-request-shipping>${formatMoney(0)}</strong></div>
+          <div data-request-courier-row><span>Courier</span><strong data-request-courier>To follow</strong></div>
           <div data-request-discount-row hidden><span>Discount</span><strong data-request-discount>${formatMoney(0)}</strong></div>
-          <div class="request-total"><span>Total Amount Due</span><strong data-request-total>${formatMoney(item.price)}</strong></div>
+          <div class="request-total"><span data-request-total-label>Total Amount Due</span><strong data-request-total>${formatMoney(item.price)}</strong></div>
         </section>
 
         <div class="button-row">
@@ -814,31 +830,49 @@ export function bindInventoryPage(root, store, notify, refresh) {
   if (paymentForm) {
     const updateSummary = () => {
       try {
+        const shippingMode = paymentForm.elements.shippingMode.value;
         const amounts = calculatePaymentRequestTotal(
           paymentForm.elements.itemPrice.value,
           paymentForm.elements.shippingFee.value,
           paymentForm.elements.discount.value,
+          shippingMode,
         );
+        const courier = paymentForm.elements.courier.value === "Other"
+          ? paymentForm.elements.customCourier.value.trim() || "Other"
+          : paymentForm.elements.courier.value;
+        const shippingFeeField = root.querySelector("[data-shipping-fee-field]");
+        const customCourierField = root.querySelector("[data-custom-courier-field]");
+        const isFeeNow = shippingMode === SHIPPING_MODES.FEE_NOW;
+        const isToFollow = shippingMode === SHIPPING_MODES.TO_FOLLOW;
+
+        if (shippingFeeField) shippingFeeField.hidden = !isFeeNow;
+        if (customCourierField) customCourierField.hidden = paymentForm.elements.courier.value !== "Other";
         root.querySelector("[data-request-subtotal]").textContent = formatMoney(amounts.itemPrice);
-        root.querySelector("[data-request-shipping]").textContent = formatMoney(amounts.shippingFee);
+        root.querySelector("[data-request-shipping-label]").textContent = isToFollow ? "Shipping Fee" : "Shipping Fee";
+        root.querySelector("[data-request-shipping]").textContent = isToFollow ? "To follow" : formatMoney(amounts.shippingFee);
+        root.querySelector("[data-request-courier]").textContent = courier || "To follow";
         root.querySelector("[data-request-discount]").textContent = `- ${formatMoney(amounts.discount)}`;
+        root.querySelector("[data-request-total-label]").textContent = isToFollow ? "Amount Due Now" : "Total Amount Due";
         root.querySelector("[data-request-total]").textContent = formatMoney(amounts.total);
-        root.querySelector("[data-request-shipping-row]").hidden = amounts.shippingFee === 0;
+        root.querySelector("[data-request-shipping-row]").hidden = shippingMode === SHIPPING_MODES.PICKUP || (isFeeNow && amounts.shippingFee === 0);
+        root.querySelector("[data-request-courier-row]").hidden = shippingMode === SHIPPING_MODES.PICKUP;
         root.querySelector("[data-request-discount-row]").hidden = amounts.discount === 0;
       } catch {
-        root.querySelector("[data-request-total]").textContent = "—";
+        root.querySelector("[data-request-total]").textContent = "--";
       }
     };
-    ["itemPrice", "shippingFee", "discount"].forEach((name) => {
-      paymentForm.elements[name].addEventListener("input", updateSummary);
+    ["itemPrice", "shippingFee", "discount", "shippingMode", "courier", "customCourier"].forEach((name) => {
+      paymentForm.elements[name]?.addEventListener("input", updateSummary);
+      paymentForm.elements[name]?.addEventListener("change", updateSummary);
     });
+    updateSummary();
 
     bindForm(paymentForm, async (data) => {
       try {
         if (!isPaymentConfigurationComplete(store.paymentConfig)) {
           throw new Error("Set up GCash details and the GoTyme QR before generating a request.");
         }
-        const amounts = calculatePaymentRequestTotal(data.itemPrice, data.shippingFee, data.discount);
+        const amounts = calculatePaymentRequestTotal(data.itemPrice, data.shippingFee, data.discount, data.shippingMode);
         const result = await addPaymentRequest({
           ...data,
           itemId: paymentRequestItemId,

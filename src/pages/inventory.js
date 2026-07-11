@@ -394,19 +394,19 @@ function paymentRequestForm(store) {
           <button class="icon-btn" type="button" data-close-payment-request>Close</button>
         </div>
 
-        <section class="modal-section">
+        <section class="modal-section payment-request-section">
           <h3>Customer</h3>
-          <div class="form-row">
+          <div class="payment-request-field-grid">
             <label>Customer Name<input name="customerName" required /></label>
             <label>Customer Contact<input name="customerContact" required /></label>
+            <label class="full-span">Shipping Address<textarea name="shippingAddress" rows="2" placeholder="Optional"></textarea></label>
           </div>
-          <label>Shipping Address<textarea name="shippingAddress" rows="2" placeholder="Optional"></textarea></label>
         </section>
 
-        <section class="modal-section">
+        <section class="modal-section payment-request-section">
           <h3>Order</h3>
-          <label>Item Name<input value="${escapeText(item.name)}" readonly /></label>
-          <div class="form-row">
+          <div class="payment-request-field-grid">
+            <label>Item Name<input value="${escapeText(item.name)}" readonly /></label>
             <label>Selling Price<input type="number" name="itemPrice" min="0" step="0.01" value="${item.price}" required /></label>
             <label>Shipping Mode
               <select name="shippingMode">
@@ -415,24 +415,20 @@ function paymentRequestForm(store) {
                 <option value="${SHIPPING_MODES.PICKUP}">${SHIPPING_MODE_LABELS[SHIPPING_MODES.PICKUP]}</option>
               </select>
             </label>
-          </div>
-          <div class="form-row">
-            <label data-shipping-fee-field>Shipping Fee<input type="number" name="shippingFee" min="0" step="0.01" value="0" /></label>
-            <label>Courier
+            <label data-courier-field>Courier
               <select name="courier">
                 ${COURIER_OPTIONS.map((courier) => `<option value="${escapeText(courier)}">${escapeText(courier)}</option>`).join("")}
               </select>
             </label>
-          </div>
-          <label data-custom-courier-field hidden>Custom Courier<input name="customCourier" placeholder="Courier name" /></label>
-          <div class="form-row">
+            <label data-shipping-fee-field>Shipping Fee<input type="number" name="shippingFee" min="0" step="0.01" value="0" /></label>
             <label>Discount<input type="number" name="discount" min="0" step="0.01" value="0" /></label>
             <label>Valid Until<input type="date" name="validUntil" /></label>
+            <label data-custom-courier-field hidden>Custom Courier<input name="customCourier" placeholder="Courier name" /></label>
+            <label class="full-span">Customer-facing Note<textarea name="customerNote" rows="2" placeholder="Optional"></textarea></label>
           </div>
-          <label>Customer-facing Note<textarea name="customerNote" rows="2" placeholder="Optional"></textarea></label>
         </section>
 
-        <section class="modal-section payment-request-summary">
+        <section class="modal-section payment-request-summary payment-request-section">
           <h3>Summary</h3>
           <div><span>Subtotal</span><strong data-request-subtotal>${formatMoney(item.price)}</strong></div>
           <div data-request-shipping-row hidden><span data-request-shipping-label>Shipping Fee</span><strong data-request-shipping>${formatMoney(0)}</strong></div>
@@ -842,11 +838,13 @@ export function bindInventoryPage(root, store, notify, refresh) {
           : paymentForm.elements.courier.value;
         const shippingFeeField = root.querySelector("[data-shipping-fee-field]");
         const customCourierField = root.querySelector("[data-custom-courier-field]");
+        const courierField = root.querySelector("[data-courier-field]");
         const isFeeNow = shippingMode === SHIPPING_MODES.FEE_NOW;
         const isToFollow = shippingMode === SHIPPING_MODES.TO_FOLLOW;
 
         if (shippingFeeField) shippingFeeField.hidden = !isFeeNow;
-        if (customCourierField) customCourierField.hidden = paymentForm.elements.courier.value !== "Other";
+        if (courierField) courierField.hidden = shippingMode === SHIPPING_MODES.PICKUP;
+        if (customCourierField) customCourierField.hidden = paymentForm.elements.courier.value !== "Other" || shippingMode === SHIPPING_MODES.PICKUP;
         root.querySelector("[data-request-subtotal]").textContent = formatMoney(amounts.itemPrice);
         root.querySelector("[data-request-shipping-label]").textContent = isToFollow ? "Shipping Fee" : "Shipping Fee";
         root.querySelector("[data-request-shipping]").textContent = isToFollow ? "To follow" : formatMoney(amounts.shippingFee);

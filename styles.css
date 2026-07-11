@@ -2134,8 +2134,29 @@ td:nth-child(n + 3) {
 }
 
 .payment-request-modal-panel {
-  width: min(100%, 760px);
-  max-width: 760px;
+  width: min(100%, 920px);
+  max-width: 920px;
+}
+.payment-request-form {
+  gap: 12px;
+}
+
+.payment-request-section {
+  width: 100%;
+}
+
+.payment-request-field-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.payment-request-field-grid .full-span {
+  grid-column: 1 / -1;
+}
+
+.payment-request-form textarea {
+  min-height: 64px;
 }
 
 .inventory-modal-form .modal-section:nth-of-type(2) {
@@ -2493,6 +2514,42 @@ td:nth-child(n + 3) {
   .modal-panel {
     max-width: 520px;
     border-radius: 16px;
+  }
+
+
+  .payment-request-modal-panel {
+    width: min(100%, 920px);
+    max-width: 920px;
+    max-height: 90vh;
+  }
+
+  .payment-request-form {
+    gap: 12px;
+    padding: 14px;
+  }
+
+  .payment-request-form .modal-header,
+  .payment-request-form .button-row {
+    margin: 0;
+  }
+
+  .payment-request-form .modal-section {
+    gap: 10px;
+    padding: 10px;
+  }
+
+  .payment-request-field-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    gap: 10px;
+  }
+
+  .payment-request-form textarea {
+    min-height: 58px;
+  }
+
+  .payment-request-summary {
+    gap: 8px;
   }
 
   .inventory-modal-panel {

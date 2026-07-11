@@ -95,10 +95,7 @@ export async function createPaymentRequestPdf(request, config) {
   drawText(`Payment Request No. ${request.requestNumber}`, margin, y - 31, 9, bold, colors.accent);
 
   drawRight("Payment Request", PAGE.width - margin, y, 16, bold);
-  drawRight(`Status: ${request.status}`, PAGE.width - margin, y - 18, 9, bold, colors.ink);
-  drawRight(`Date Issued: ${dateLabel(request.issuedAt)}`, PAGE.width - margin, y - 32, 8.5, regular, colors.muted);
-  if (request.validUntil) drawRight(`Valid Until: ${dateLabel(request.validUntil)}`, PAGE.width - margin, y - 45, 8.5, regular, colors.muted);
-  y -= request.validUntil ? 64 : 52;
+  y -= 48;
   rule(y);
 
   y -= 22;
@@ -161,7 +158,51 @@ export async function createPaymentRequestPdf(request, config) {
     color: colors.line,
   });
   totalRow(request.shippingMode === SHIPPING_MODES.TO_FOLLOW ? "Amount Due Now" : "Total Amount Due", pdfMoney(request.totalAmount), totalsY - 12, true);
-  y = totalsY - 34;
+  y = totalsY - 22;
+  rule(y);
+
+  y -= 16;
+  sectionTitle("Payment Options", margin, y);
+  y -= 8;
+  const optionTop = y;
+  const optionWidth = (contentWidth - 16) / 2;
+  const optionHeight = 104;
+  page.drawRectangle({ x: margin, y: optionTop - optionHeight, width: optionWidth, height: optionHeight, borderColor: colors.line, borderWidth: 0.7 });
+  page.drawRectangle({ x: margin + optionWidth + 16, y: optionTop - optionHeight, width: optionWidth, height: optionHeight, borderColor: colors.line, borderWidth: 0.7 });
+
+  drawText("GCash", margin + 12, optionTop - 18, 10, bold);
+  drawText("Account Name", margin + 12, optionTop - 34, 7.5, regular, colors.muted);
+  drawText(config.gcashAccountName, margin + 12, optionTop - 47, 9, bold, colors.ink, { maxWidth: optionWidth - 24 });
+  drawText("Mobile Number", margin + 12, optionTop - 64, 7.5, regular, colors.muted);
+  drawText(config.gcashMobileNumber, margin + 12, optionTop - 77, 9, bold);
+
+  const goTymeX = margin + optionWidth + 28;
+  drawText("GoTyme / InstaPay", goTymeX, optionTop - 18, 10, bold);
+  const qrData = await imageBytes(config.gotymeQrImage);
+  const qr = qrData.mime.includes("png")
+    ? await document.embedPng(qrData.bytes)
+    : await document.embedJpg(qrData.bytes);
+  const qrSize = 82;
+  const qrScale = Math.min(qrSize / qr.width, qrSize / qr.height);
+  const qrWidth = qr.width * qrScale;
+  const qrHeight = qr.height * qrScale;
+  page.drawImage(qr, {
+    x: goTymeX,
+    y: optionTop - 98,
+    width: qrWidth,
+    height: qrHeight,
+  });
+  if (config.gotymeAccountName) {
+    drawText("Account Name", goTymeX + qrSize + 10, optionTop - 42, 7.5, regular, colors.muted);
+    drawText(config.gotymeAccountName, goTymeX + qrSize + 10, optionTop - 56, 8.2, bold, colors.ink, { maxWidth: optionWidth - qrSize - 34 });
+  }
+
+  y = optionTop - optionHeight - 14;
+  drawText("Payment Reference", margin, y, 7.8, regular, colors.muted);
+  drawText(request.requestNumber, margin + 112, y, 9, bold, colors.ink);
+  y -= 16;
+  drawText("After payment, please send your payment confirmation or transaction reference to Nana Kollects.", margin, y, 8.2, regular, colors.muted, { maxWidth: contentWidth });
+  y -= 15;
 
   const validityText = request.validUntil
     ? `This payment request is valid until ${dateLabel(request.validUntil)}. If payment or notice of cancellation is not received by then, the item may be released and future reservations may be declined.`
@@ -170,51 +211,7 @@ export async function createPaymentRequestPdf(request, config) {
     drawText(line, margin, y, 7.8, regular, colors.muted);
     y -= 11;
   });
-  y -= 8;
-  rule(y);
-
-  y -= 22;
-  sectionTitle("Payment Options", margin, y);
-  y -= 10;
-  const optionTop = y;
-  const optionWidth = (contentWidth - 16) / 2;
-  const optionHeight = 108;
-  page.drawRectangle({ x: margin, y: optionTop - optionHeight, width: optionWidth, height: optionHeight, borderColor: colors.line, borderWidth: 0.7 });
-  page.drawRectangle({ x: margin + optionWidth + 16, y: optionTop - optionHeight, width: optionWidth, height: optionHeight, borderColor: colors.line, borderWidth: 0.7 });
-
-  drawText("GCash", margin + 12, optionTop - 18, 10, bold);
-  drawText("Account Name", margin + 12, optionTop - 36, 7.5, regular, colors.muted);
-  drawText(config.gcashAccountName, margin + 12, optionTop - 49, 9, bold, colors.ink, { maxWidth: optionWidth - 24 });
-  drawText("Mobile Number", margin + 12, optionTop - 68, 7.5, regular, colors.muted);
-  drawText(config.gcashMobileNumber, margin + 12, optionTop - 81, 9, bold);
-
-  const goTymeX = margin + optionWidth + 28;
-  drawText("GoTyme / InstaPay", goTymeX, optionTop - 18, 10, bold);
-  const qrData = await imageBytes(config.gotymeQrImage);
-  const qr = qrData.mime.includes("png")
-    ? await document.embedPng(qrData.bytes)
-    : await document.embedJpg(qrData.bytes);
-  const qrSize = 62;
-  const qrScale = Math.min(qrSize / qr.width, qrSize / qr.height);
-  const qrWidth = qr.width * qrScale;
-  const qrHeight = qr.height * qrScale;
-  page.drawImage(qr, {
-    x: goTymeX,
-    y: optionTop - 90,
-    width: qrWidth,
-    height: qrHeight,
-  });
-  if (config.gotymeAccountName) {
-    drawText("Account Name", goTymeX + qrSize + 12, optionTop - 42, 7.5, regular, colors.muted);
-    drawText(config.gotymeAccountName, goTymeX + qrSize + 12, optionTop - 56, 8.5, bold, colors.ink, { maxWidth: optionWidth - qrSize - 36 });
-  }
-
-  y = optionTop - optionHeight - 18;
-  drawText("Payment Reference", margin, y, 7.8, regular, colors.muted);
-  drawText(request.requestNumber, margin + 112, y, 9, bold, colors.ink);
-  y -= 16;
-  drawText("After payment, please send your payment confirmation or transaction reference to Nana Kollects.", margin, y, 8.2, regular, colors.muted, { maxWidth: contentWidth });
-  y -= 15;
+  y -= 3;
   if (request.customerNote) {
     drawText("Note", margin, y, 8.2, bold, colors.ink);
     y -= 12;

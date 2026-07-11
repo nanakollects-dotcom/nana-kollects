@@ -13,12 +13,21 @@ export const SHIPPING_MODES = {
 };
 
 export const SHIPPING_MODE_LABELS = {
-  [SHIPPING_MODES.FEE_NOW]: "Shipping fee now",
+  [SHIPPING_MODES.FEE_NOW]: "Include shipping fee",
   [SHIPPING_MODES.TO_FOLLOW]: "Shipping fee to follow",
   [SHIPPING_MODES.PICKUP]: "No shipping / pickup",
 };
 
 export const COURIER_OPTIONS = ["To follow", "J&T", "GoGo Xpress", "Lalamove", "Other"];
+export function displayCourier(value) {
+  const courier = String(value || "").trim();
+  const legacy = {
+    "To follow": "Courier to follow",
+    "J&T": "J&T Express",
+    "Other": "Other courier",
+  };
+  return legacy[courier] || courier;
+}
 
 export const DEFAULT_PAYMENT_CONFIG = {
   gcashAccountName: "Ma. Christine Albaladejo",

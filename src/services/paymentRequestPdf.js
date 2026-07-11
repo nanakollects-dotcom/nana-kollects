@@ -1,5 +1,5 @@
 import { formatMoney } from "../components/format.js";
-import { isPaymentConfigurationComplete, SHIPPING_MODES } from "../core/paymentRequests.js";
+import { displayCourier, isPaymentConfigurationComplete, SHIPPING_MODE_LABELS, SHIPPING_MODES } from "../core/paymentRequests.js";
 
 const PAGE = { width: 595.28, height: 841.89 };
 
@@ -143,7 +143,11 @@ export async function createPaymentRequestPdf(request, config) {
     totalsY -= 16;
   }
   if (request.courier && request.shippingMode !== SHIPPING_MODES.PICKUP) {
-    totalRow("Courier", request.courier, totalsY);
+    totalRow("Courier", displayCourier(request.courier), totalsY);
+    totalsY -= 16;
+  }
+  if (request.shippingMode === SHIPPING_MODES.PICKUP) {
+    totalRow("Shipping", SHIPPING_MODE_LABELS[SHIPPING_MODES.PICKUP], totalsY);
     totalsY -= 16;
   }
   if (request.discount > 0) {

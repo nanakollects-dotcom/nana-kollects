@@ -169,10 +169,26 @@ export async function createPaymentRequestPdf(request, config) {
   page.drawRectangle({ x: margin + optionWidth + 16, y: optionTop - optionHeight, width: optionWidth, height: optionHeight, borderColor: colors.line, borderWidth: 0.7 });
 
   drawText("GCash", margin + 12, optionTop - 18, 10, bold);
-  drawText("Account Name", margin + 12, optionTop - 34, 7.5, regular, colors.muted);
-  drawText(config.gcashAccountName, margin + 12, optionTop - 47, 9, bold, colors.ink, { maxWidth: optionWidth - 24 });
-  drawText("Mobile Number", margin + 12, optionTop - 64, 7.5, regular, colors.muted);
-  drawText(config.gcashMobileNumber, margin + 12, optionTop - 77, 9, bold);
+  const gcashQrData = await imageBytes(config.gcashQrImage || "/payment/gcash-qr.jpg");
+  const gcashQr = gcashQrData.mime.includes("png")
+    ? await document.embedPng(gcashQrData.bytes)
+    : await document.embedJpg(gcashQrData.bytes);
+  const gcashQrSize = 100;
+  const gcashQrScale = Math.min(gcashQrSize / gcashQr.width, gcashQrSize / gcashQr.height);
+  const gcashQrWidth = gcashQr.width * gcashQrScale;
+  const gcashQrHeight = gcashQr.height * gcashQrScale;
+  page.drawImage(gcashQr, {
+    x: margin + 12,
+    y: optionTop - 126,
+    width: gcashQrWidth,
+    height: gcashQrHeight,
+  });
+  const gcashDetailsX = margin + 12 + gcashQrSize + 10;
+  const gcashDetailsWidth = optionWidth - gcashQrSize - 34;
+  drawText("Account Name", gcashDetailsX, optionTop - 42, 7.5, regular, colors.muted);
+  drawText(config.gcashAccountName, gcashDetailsX, optionTop - 56, 8.2, bold, colors.ink, { maxWidth: gcashDetailsWidth });
+  drawText("Mobile Number", gcashDetailsX, optionTop - 80, 7.5, regular, colors.muted);
+  drawText(config.gcashMobileNumber, gcashDetailsX, optionTop - 94, 8.2, bold, colors.ink, { maxWidth: gcashDetailsWidth });
 
   const goTymeX = margin + optionWidth + 28;
   drawText("GoTyme / InstaPay", goTymeX, optionTop - 18, 10, bold);

@@ -350,7 +350,7 @@ function inventoryForm(store) {
               ? `
                 <section class="modal-section payment-request-action-panel">
                   <h3>Payment Request</h3>
-                  <button class="table-action" type="button" data-create-request="${editingItem.id}">Create Payment Request</button>
+                  <button class="table-action primary-action" type="button" data-create-request="${editingItem.id}">Create Payment Request</button>
                 </section>
               `
               : ""

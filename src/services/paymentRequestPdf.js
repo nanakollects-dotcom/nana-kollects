@@ -69,9 +69,13 @@ export async function createPaymentRequestPdf(request, config) {
     drawText(value, x, drawY - 12, 9, bold, colors.ink, { maxWidth: width });
     return drawY - 29;
   };
-  const totalRow = (label, value, drawY, strong = false) => {
-    drawText(label, PAGE.width - margin - 190, drawY, strong ? 10 : 8.5, strong ? bold : regular, strong ? colors.ink : colors.muted);
-    drawRight(value, PAGE.width - margin, drawY, strong ? 13 : 9.5, strong ? bold : bold, colors.ink);
+  const totalRow = (label, value, drawY) => {
+    drawText(label, PAGE.width - margin - 190, drawY, 8.5, regular, colors.muted);
+    drawRight(value, PAGE.width - margin, drawY, 9.5, bold, colors.ink);
+  };
+  const drawCentered = (value, centerX, drawY, size = 9, font = regular, color = colors.ink) => {
+    const label = cleanText(value);
+    page.drawText(label, { x: centerX - font.widthOfTextAtSize(label, size) / 2, y: drawY, size, font, color });
   };
   const wrapLines = (value, maxChars = 94) => {
     const words = cleanText(value).split(" ").filter(Boolean);
@@ -90,11 +94,12 @@ export async function createPaymentRequestPdf(request, config) {
     return lines;
   };
 
-  drawText("Nana Kollects", margin, y, 20, bold);
+  drawText("Nana Kollects", margin, y, 22, bold);
+  drawText("PAYMENT REQUEST", PAGE.width - margin - 88, y + 1, 7.8, bold, colors.muted);
   drawText("Hot Picks. Limited Pieces.", margin, y - 15, 8, regular, colors.muted);
-  drawText(`Payment Request No. ${request.requestNumber}`, margin, y - 31, 9, bold, colors.accent);
+  drawRight(request.requestNumber, PAGE.width - margin, y - 15, 12, bold, colors.accent);
 
-  y -= 48;
+  y -= 42;
   rule(y);
 
   y -= 22;
@@ -102,8 +107,20 @@ export async function createPaymentRequestPdf(request, config) {
   const columnWidth = (contentWidth - columnGap) / 2;
   sectionTitle("Customer", margin, y);
   sectionTitle("Request Details", margin + columnWidth + columnGap, y);
-  let leftY = y - 17;
-  let rightY = y - 17;
+  page.drawLine({
+    start: { x: margin, y: y - 7 },
+    end: { x: margin + columnWidth, y: y - 7 },
+    thickness: 0.5,
+    color: colors.line,
+  });
+  page.drawLine({
+    start: { x: margin + columnWidth + columnGap, y: y - 7 },
+    end: { x: margin + contentWidth, y: y - 7 },
+    thickness: 0.5,
+    color: colors.line,
+  });
+  let leftY = y - 20;
+  let rightY = y - 20;
   leftY = detail("Customer Name", request.customerName, margin, leftY, columnWidth);
   if (request.customerContact) leftY = detail("Mobile Number", request.customerContact, margin, leftY, columnWidth);
   if (request.shippingAddress) leftY = detail("Shipping Address", request.shippingAddress, margin, leftY, columnWidth);
@@ -115,16 +132,16 @@ export async function createPaymentRequestPdf(request, config) {
   y = Math.min(leftY, rightY) - 6;
   rule(y);
 
-  y -= 22;
+  y -= 18;
   sectionTitle("Order Details", margin, y);
-  y -= 20;
+  y -= 18;
   const tableTop = y;
   page.drawRectangle({ x: margin, y: tableTop - 20, width: contentWidth, height: 24, color: colors.pale });
   drawText("Item", margin + 10, tableTop - 12, 8, bold, colors.muted);
   drawText("Qty", margin + 300, tableTop - 12, 8, bold, colors.muted);
   drawRight("Price", margin + 410, tableTop - 12, 8, bold, colors.muted);
   drawRight("Amount", PAGE.width - margin - 10, tableTop - 12, 8, bold, colors.muted);
-  y = tableTop - 42;
+  y = tableTop - 38;
   drawText(request.itemName, margin + 10, y, 9.5, bold, colors.ink, { maxWidth: 270 });
   drawText("1", margin + 303, y, 9.5, regular, colors.ink);
   drawRight(pdfMoney(request.itemPrice), margin + 410, y, 9.5, regular, colors.ink);
@@ -132,31 +149,37 @@ export async function createPaymentRequestPdf(request, config) {
   y -= 18;
   rule(y);
 
-  y -= 22;
+  y -= 18;
   const totalStart = y;
   totalRow("Subtotal", pdfMoney(request.itemPrice), totalStart);
-  let totalsY = totalStart - 16;
+  let totalsY = totalStart - 15;
   if (request.shippingMode === SHIPPING_MODES.TO_FOLLOW) {
     totalRow("Shipping Fee", "To follow", totalsY);
-    totalsY -= 16;
+    totalsY -= 15;
   }
   if (request.shippingMode === SHIPPING_MODES.FEE_NOW && request.shippingFee > 0) {
     totalRow("Shipping Fee", pdfMoney(request.shippingFee), totalsY);
-    totalsY -= 16;
+    totalsY -= 15;
   }
 
   if (request.discount > 0) {
     totalRow("Discount", `-${pdfMoney(request.discount)}`, totalsY);
-    totalsY -= 16;
+    totalsY -= 15;
   }
-  page.drawLine({
-    start: { x: PAGE.width - margin - 190, y: totalsY + 5 },
-    end: { x: PAGE.width - margin, y: totalsY + 5 },
-    thickness: 0.7,
-    color: colors.line,
+  totalsY -= 8;
+  const totalBarY = totalsY - 28;
+  page.drawRectangle({
+    x: margin,
+    y: totalBarY,
+    width: contentWidth,
+    height: 34,
+    color: colors.pale,
+    borderColor: colors.line,
+    borderWidth: 0.7,
   });
-  totalRow(request.shippingMode === SHIPPING_MODES.TO_FOLLOW ? "Amount Due Now" : "Total Amount Due", pdfMoney(request.totalAmount), totalsY - 12, true);
-  y = totalsY - 22;
+  drawText(request.shippingMode === SHIPPING_MODES.TO_FOLLOW ? "Amount Due Now" : "Total Amount Due", margin + 12, totalBarY + 11, 10.5, bold, colors.ink);
+  drawRight(pdfMoney(request.totalAmount), PAGE.width - margin - 12, totalBarY + 9, 14, bold, colors.ink);
+  y = totalBarY - 10;
   rule(y);
 
   y -= 16;
@@ -189,7 +212,7 @@ export async function createPaymentRequestPdf(request, config) {
   const gcashDetailsWidth = optionWidth - paymentQrSize - 34;
   drawText("Account Name", gcashDetailsX, paymentDetailsY, 7.5, regular, colors.muted);
   drawText(config.gcashAccountName, gcashDetailsX, paymentDetailsY - 14, 8.2, bold, colors.ink, { maxWidth: gcashDetailsWidth });
-  drawText("Mobile Number", gcashDetailsX, paymentDetailsY - 38, 7.5, regular, colors.muted);
+  drawText("GCash No.", gcashDetailsX, paymentDetailsY - 38, 7.5, regular, colors.muted);
   drawText(config.gcashMobileNumber, gcashDetailsX, paymentDetailsY - 52, 8.2, bold, colors.ink, { maxWidth: gcashDetailsWidth });
 
   const goTymeX = margin + optionWidth + 28;
@@ -215,25 +238,13 @@ export async function createPaymentRequestPdf(request, config) {
   }
 
   y = optionTop - optionHeight - 10;
-  const reminderSections = [
-    {
-      title: "Reservation Validity",
-      lines: wrapLines(`This payment request is valid until ${dateLabel(request.validUntil)}.`, 100),
-    },
-    {
-      title: "Reservation Policy",
-      lines: wrapLines("Unpaid reservations without cancellation notice may be released, declined for future orders, and may be included in Nana Kollects' buyer advisory posts in accordance with our shop policies.", 100),
-    },
-    {
-      title: "Shop Policies",
-      lines: wrapLines("By paying, you acknowledge that you have read our FAQs and shop policies posted in our pinned posts and highlights.", 100),
-    },
-  ];
-  const reminderContentHeight = reminderSections.reduce(
-    (height, section, index) => height + 12 + section.lines.length * 9 + (index < reminderSections.length - 1 ? 15 : 0),
-    28,
-  );
-  const reminderHeight = reminderContentHeight + 18;
+  const reminderParagraphs = [
+    request.validUntil
+      ? `This request is valid until ${dateLabel(request.validUntil)}. Unpaid reservations without cancellation notice may be released, declined for future orders, and may be included in Nana Kollects' buyer advisory posts in accordance with our shop policies.`
+      : "Items are reserved only while the payment request remains pending. Unpaid reservations without cancellation notice may be released, declined for future orders, and may be included in Nana Kollects' buyer advisory posts in accordance with our shop policies.",
+    "By paying, you acknowledge that you have read our FAQs and shop policies posted in our pinned posts and highlights.",
+  ].map((line) => wrapLines(line, 106));
+  const reminderHeight = 31 + reminderParagraphs.reduce((height, lines) => height + lines.length * 9, 0) + 10;
   page.drawRectangle({
     x: margin,
     y: y - reminderHeight,
@@ -243,34 +254,21 @@ export async function createPaymentRequestPdf(request, config) {
     borderColor: colors.line,
     borderWidth: 0.7,
   });
-  drawText("PAYMENT REMINDERS", margin + 12, y - 15, 8, bold, colors.muted);
-  const dividerStart = margin + 12;
-  const dividerEnd = PAGE.width - margin - 12;
-  let reminderY = y - 25;
-  page.drawLine({
-    start: { x: dividerStart, y: reminderY },
-    end: { x: dividerEnd, y: reminderY },
-    thickness: 0.5,
-    color: colors.line,
+  page.drawRectangle({
+    x: margin + 12,
+    y: y - reminderHeight + 12,
+    width: 3,
+    height: reminderHeight - 24,
+    color: colors.accent,
   });
-  reminderY -= 15;
-  reminderSections.forEach((section, index) => {
-    drawText(section.title, margin + 12, reminderY, 7.7, bold, colors.ink);
-    reminderY -= 10;
-    section.lines.forEach((line) => {
-      drawText(line, margin + 12, reminderY, 7.5, regular, colors.muted);
+  drawText("PAYMENT REMINDERS", margin + 23, y - 15, 8, bold, colors.muted);
+  let reminderY = y - 31;
+  reminderParagraphs.forEach((lines, index) => {
+    lines.forEach((line) => {
+      drawText(line, margin + 23, reminderY, 7.5, regular, colors.muted);
       reminderY -= 9;
     });
-    if (index < reminderSections.length - 1) {
-      reminderY -= 6;
-      page.drawLine({
-        start: { x: dividerStart, y: reminderY },
-        end: { x: dividerEnd, y: reminderY },
-        thickness: 0.5,
-        color: colors.line,
-      });
-      reminderY -= 13;
-    }
+    if (index < reminderParagraphs.length - 1) reminderY -= 6;
   });
   y -= reminderHeight + 10;
   if (request.customerNote) {
@@ -289,13 +287,7 @@ export async function createPaymentRequestPdf(request, config) {
     thickness: 0.7,
     color: colors.line,
   });
-  page.drawText("We hope you love your piece. Thank you for shopping with Nana Kollects!", {
-    x: margin,
-    y: 35,
-    size: 8.5,
-    font: regular,
-    color: colors.muted,
-  });
+  drawCentered("We hope you love your piece. Thank you for shopping with Nana Kollects!", PAGE.width / 2, 35, 8.5, regular, colors.muted);
 
   return document.save();
 }

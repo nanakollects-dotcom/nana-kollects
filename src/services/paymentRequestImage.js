@@ -68,6 +68,10 @@ function sectionTitle(value, x, y) {
   return text(String(value).toUpperCase(), x, y, 23, 700, COLORS.muted);
 }
 
+function centerText(value, x, y, size = 24, weight = 400, color = COLORS.ink) {
+  return text(value, x, y, size, weight, color, 'text-anchor="middle"');
+}
+
 function detail(label, value, x, y, width = 360) {
   if (!value) return { svg: "", y };
   const lines = wrapText(value, Math.max(20, Math.floor(width / 13)));
@@ -166,12 +170,12 @@ export async function createPaymentRequestImage(request, config = {}) {
   let svg = "";
   let y = 82;
 
-  svg += text("Nana Kollects", MARGIN, y, 48, 800);
+  svg += text("Nana Kollects", MARGIN, y, 52, 800);
+  svg += text("PAYMENT REQUEST", IMAGE_WIDTH - MARGIN, y - 3, 21, 700, COLORS.muted, 'text-anchor="end"');
   y += 36;
   svg += text("Hot Picks. Limited Pieces.", MARGIN, y, 22, 400, COLORS.muted);
-  y += 38;
-  svg += text(`Payment Request No. ${request.requestNumber}`, MARGIN, y, 25, 700, COLORS.accent);
-  y += 42;
+  svg += rightText(request.requestNumber, IMAGE_WIDTH - MARGIN, y + 3, 30, 800, COLORS.accent);
+  y += 46;
   svg += rule(y);
 
   y += 58;
@@ -179,8 +183,10 @@ export async function createPaymentRequestImage(request, config = {}) {
   const rightX = 568;
   svg += sectionTitle("Customer", leftX, y);
   svg += sectionTitle("Request Details", rightX, y);
-  let leftY = y + 42;
-  let rightY = y + 42;
+  svg += `<line x1="${leftX}" y1="${y + 16}" x2="${leftX + 410}" y2="${y + 16}" stroke="${COLORS.line}" stroke-width="1.5" />`;
+  svg += `<line x1="${rightX}" y1="${y + 16}" x2="${rightX + 400}" y2="${y + 16}" stroke="${COLORS.line}" stroke-width="1.5" />`;
+  let leftY = y + 46;
+  let rightY = y + 46;
   let rendered = detail("Customer Name", request.customerName, leftX, leftY, 410);
   svg += rendered.svg;
   leftY = rendered.y;
@@ -207,15 +213,15 @@ export async function createPaymentRequestImage(request, config = {}) {
   y = Math.max(leftY, rightY) + 24;
   svg += rule(y);
 
-  y += 56;
+  y += 46;
   svg += sectionTitle("Order Details", MARGIN, y);
-  y += 44;
+  y += 38;
   svg += `<rect x="${MARGIN}" y="${y}" width="${CONTENT_WIDTH}" height="58" fill="${COLORS.pale}" />`;
   svg += text("Item", MARGIN + 18, y + 37, 22, 700, COLORS.muted);
   svg += text("Qty", 630, y + 37, 22, 700, COLORS.muted);
   svg += rightText("Price", 830, y + 37, 22, 700, COLORS.muted);
   svg += rightText("Amount", IMAGE_WIDTH - MARGIN - 14, y + 37, 22, 700, COLORS.muted);
-  y += 102;
+  y += 88;
   svg += text(request.itemName, MARGIN + 18, y, 28, 700, COLORS.ink);
   svg += text("1", 638, y, 28, 400, COLORS.ink);
   svg += rightText(money(request.itemPrice), 830, y, 28, 400, COLORS.ink);
@@ -223,25 +229,27 @@ export async function createPaymentRequestImage(request, config = {}) {
   y += 44;
   svg += rule(y);
 
-  y += 50;
+  y += 36;
   svg += totalRow("Subtotal", money(request.itemPrice), y);
-  y += 38;
+  y += 36;
   if (request.shippingMode === SHIPPING_MODES.TO_FOLLOW) {
     svg += totalRow("Shipping Fee", "To follow", y);
-    y += 38;
+    y += 36;
   }
   if (request.shippingMode === SHIPPING_MODES.FEE_NOW && request.shippingFee > 0) {
     svg += totalRow("Shipping Fee", money(request.shippingFee), y);
-    y += 38;
+    y += 36;
   }
   if (request.discount > 0) {
     svg += totalRow("Discount", `-${money(request.discount)}`, y);
-    y += 38;
+    y += 36;
   }
-  svg += `<line x1="670" y1="${y - 10}" x2="${IMAGE_WIDTH - MARGIN}" y2="${y - 10}" stroke="${COLORS.line}" stroke-width="1.5" />`;
-  y += 30;
-  svg += totalRow(request.shippingMode === SHIPPING_MODES.TO_FOLLOW ? "Amount Due Now" : "Total Amount Due", money(request.totalAmount), y, true);
-  y += 36;
+  y += 16;
+  const totalBarY = y;
+  svg += `<rect x="${MARGIN}" y="${totalBarY - 36}" width="${CONTENT_WIDTH}" height="74" fill="${COLORS.pale}" stroke="${COLORS.line}" stroke-width="1.5" />`;
+  svg += text(request.shippingMode === SHIPPING_MODES.TO_FOLLOW ? "Amount Due Now" : "Total Amount Due", MARGIN + 24, totalBarY + 10, 29, 800, COLORS.ink);
+  svg += rightText(money(request.totalAmount), IMAGE_WIDTH - MARGIN - 24, totalBarY + 12, 38, 800, COLORS.ink);
+  y += 62;
   svg += rule(y);
 
   y += 48;
@@ -260,7 +268,7 @@ export async function createPaymentRequestImage(request, config = {}) {
   const paymentTextWidth = cardWidth - qrSize - 74;
   rendered = paymentDetail("Account Name", config.gcashAccountName, gcashTextX, cardY + 82, paymentTextWidth);
   svg += rendered.svg;
-  rendered = paymentDetail("Mobile Number", config.gcashMobileNumber, gcashTextX, rendered.y, paymentTextWidth);
+  rendered = paymentDetail("GCash No.", config.gcashMobileNumber, gcashTextX, rendered.y, paymentTextWidth);
   svg += rendered.svg;
 
   const gotymeTextX = gotymeCardX + 26 + qrSize + 22;
@@ -268,49 +276,28 @@ export async function createPaymentRequestImage(request, config = {}) {
   svg += rendered.svg;
   y = cardY + cardHeight + 34;
 
-  const reminderSections = [
-    {
-      title: "Reservation Validity",
-      lines: wrapText(`This payment request is valid until ${dateLabel(request.validUntil)}.`, 84),
-    },
-    {
-      title: "Reservation Policy",
-      lines: wrapText("Unpaid reservations without cancellation notice may be released, declined for future orders, and may be included in Nana Kollects' buyer advisory posts in accordance with our shop policies.", 84),
-    },
-    {
-      title: "Shop Policies",
-      lines: wrapText("By paying, you acknowledge that you have read our FAQs and shop policies posted in our pinned posts and highlights.", 84),
-    },
-  ];
-  const reminderContentHeight = reminderSections.reduce(
-    (height, section, index) => height + 36 + section.lines.length * 27 + (index < reminderSections.length - 1 ? 38 : 0),
-    86,
-  );
-  const reminderHeight = reminderContentHeight + 24;
+  const reminderParagraphs = [
+    request.validUntil
+      ? `This request is valid until ${dateLabel(request.validUntil)}. Unpaid reservations without cancellation notice may be released, declined for future orders, and may be included in Nana Kollects' buyer advisory posts in accordance with our shop policies.`
+      : "Items are reserved only while the payment request remains pending. Unpaid reservations without cancellation notice may be released, declined for future orders, and may be included in Nana Kollects' buyer advisory posts in accordance with our shop policies.",
+    "By paying, you acknowledge that you have read our FAQs and shop policies posted in our pinned posts and highlights.",
+  ].map((line) => wrapText(line, 92));
+  const reminderHeight = 84 + reminderParagraphs.reduce((height, lines) => height + lines.length * 27, 0) + 22;
   svg += `<rect x="${MARGIN}" y="${y}" width="${CONTENT_WIDTH}" height="${reminderHeight}" fill="${COLORS.pale}" stroke="${COLORS.line}" stroke-width="1.5" />`;
-  svg += sectionTitle("Payment Reminders", MARGIN + 24, y + 42);
-  const reminderDividerStart = MARGIN + 24;
-  const reminderDividerEnd = IMAGE_WIDTH - MARGIN - 24;
-  let reminderY = y + 64;
-  svg += `<line x1="${reminderDividerStart}" y1="${reminderY}" x2="${reminderDividerEnd}" y2="${reminderY}" stroke="${COLORS.line}" stroke-width="1.5" />`;
-  reminderY += 36;
-  reminderSections.forEach((section, index) => {
-    svg += text(section.title, MARGIN + 24, reminderY, 20, 600, COLORS.ink);
-    reminderY += 32;
-    section.lines.forEach((line) => {
-      svg += text(line, MARGIN + 24, reminderY, 21, 400, COLORS.muted);
+  svg += `<rect x="${MARGIN + 24}" y="${y + 28}" width="6" height="${reminderHeight - 56}" fill="${COLORS.accent}" />`;
+  svg += sectionTitle("Payment Reminders", MARGIN + 46, y + 42);
+  let reminderY = y + 82;
+  reminderParagraphs.forEach((lines, index) => {
+    lines.forEach((line) => {
+      svg += text(line, MARGIN + 46, reminderY, 21, 400, COLORS.muted);
       reminderY += 27;
     });
-    if (index < reminderSections.length - 1) {
-      reminderY += 12;
-      svg += `<line x1="${reminderDividerStart}" y1="${reminderY}" x2="${reminderDividerEnd}" y2="${reminderY}" stroke="${COLORS.line}" stroke-width="1.5" />`;
-      reminderY += 34;
-    }
+    if (index < reminderParagraphs.length - 1) reminderY += 18;
   });
-  y += reminderHeight + 120;
+  y += reminderHeight + 96;
   svg += rule(y);
   y += 48;
-  svg += text("We hope you love your piece. Thank you for shopping with Nana Kollects!", MARGIN, y, 24, 400, COLORS.muted);
+  svg += centerText("We hope you love your piece. Thank you for shopping with Nana Kollects!", IMAGE_WIDTH / 2, y, 24, 400, COLORS.muted);
   y += 76;
 
   const svgDocument = `<svg xmlns="http://www.w3.org/2000/svg" width="${IMAGE_WIDTH}" height="${y}" viewBox="0 0 ${IMAGE_WIDTH} ${y}"><rect width="${IMAGE_WIDTH}" height="${y}" fill="#ffffff" />${svg}</svg>`;

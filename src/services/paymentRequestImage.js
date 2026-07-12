@@ -2,6 +2,7 @@ import { formatMoney } from "../components/format.js";
 import { displayCourier, SHIPPING_MODES } from "../core/paymentRequests.js";
 
 const IMAGE_WIDTH = 1080;
+const GOTYME_QR_ASSET = "/payment/gotyme-instapay-qr.png?v=20260713";
 const MARGIN = 72;
 const CONTENT_WIDTH = IMAGE_WIDTH - MARGIN * 2;
 const COLORS = {
@@ -161,7 +162,7 @@ async function svgToPngBlob(svg, overlays = []) {
 
 export async function createPaymentRequestImage(request, config = {}) {
   const gcashQrSource = paymentQrSource(config.gcashQrImage, "/payment/gcash-qr.png");
-  const gotymeQrSource = paymentQrSource(config.gotymeQrImage, "/payment/gotyme-instapay-qr.png");
+  const gotymeQrSource = paymentQrSource(GOTYME_QR_ASSET, GOTYME_QR_ASSET);
   const [gcashQr, gotymeQr] = await Promise.all([
     loadImage(gcashQrSource, "GCash"),
     loadImage(gotymeQrSource, "GoTyme / InstaPay"),

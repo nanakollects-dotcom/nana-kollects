@@ -2,6 +2,7 @@ import { formatMoney } from "../components/format.js";
 import { displayCourier, isPaymentConfigurationComplete, SHIPPING_MODES } from "../core/paymentRequests.js";
 
 const PAGE = { width: 595.28, height: 841.89 };
+const GOTYME_QR_ASSET = "/payment/gotyme-instapay-qr.png?v=20260713";
 
 const cleanText = (value) => String(value ?? "").replace(/[^\x20-\x7E]/g, " ").replace(/\s+/g, " ").trim();
 const pdfMoney = (value) => formatMoney(value).replace(/[^0-9.,-]+/g, "PHP ").trim();
@@ -216,7 +217,7 @@ export async function createPaymentRequestPdf(request, config) {
   drawText(config.gcashMobileNumber, gcashDetailsX, paymentDetailsY - 52, 8.2, bold, colors.ink, { maxWidth: gcashDetailsWidth });
 
   const goTymeX = margin + optionWidth + 28;
-  const goTymeQrSource = String(config.gotymeQrImage || "/payment/gotyme-instapay-qr.png").replace("/payment/gotyme-instapay-qr.jpg", "/payment/gotyme-instapay-qr.png");
+  const goTymeQrSource = GOTYME_QR_ASSET;
   const qrData = await imageBytes(goTymeQrSource);
   const qr = qrData.mime.includes("png")
     ? await document.embedPng(qrData.bytes)

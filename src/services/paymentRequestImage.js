@@ -273,7 +273,7 @@ export async function createPaymentRequestImage(request, config = {}) {
   const gotymeTextX = gotymeCardX + 26 + qrSize + 22;
   rendered = paymentDetail("Account Name", config.gotymeAccountName, gotymeTextX, cardY + 78, paymentTextWidth);
   svg += rendered.svg;
-  rendered = paymentDetail("Acc No.", "0144 5161 1994", gotymeTextX, rendered.y, paymentTextWidth);
+  rendered = paymentDetail("Acc No.", "014451611994", gotymeTextX, rendered.y, paymentTextWidth);
   svg += rendered.svg;
   y = cardY + cardHeight + 34;
 

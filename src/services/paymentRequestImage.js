@@ -268,20 +268,44 @@ export async function createPaymentRequestImage(request, config = {}) {
   svg += rendered.svg;
   y = cardY + cardHeight + 34;
 
-  const validityText = request.validUntil
-    ? `This request is valid until ${dateLabel(request.validUntil)}. Unpaid reservations without cancellation notice may be released, declined for future orders, and may be included in Nana Kollects' buyer advisory posts in accordance with our shop policies.`
-    : "Items are reserved only while the payment request remains pending. Unpaid reservations without cancellation notice may be released, declined for future orders, and may be included in Nana Kollects' buyer advisory posts in accordance with our shop policies.";
-  const reminderLines = [
-    validityText,
-    "By paying, you confirm that you have read Nana Kollects' FAQs and shop policies in our pinned posts/highlights.",
-  ].flatMap((line) => wrapText(line, 88));
-  const reminderHeight = 70 + reminderLines.length * 27;
+  const reminderSections = [
+    {
+      title: "Reservation Validity",
+      lines: wrapText(`This payment request is valid until ${dateLabel(request.validUntil)}.`, 84),
+    },
+    {
+      title: "Reservation Policy",
+      lines: wrapText("Unpaid reservations without cancellation notice may be released, declined for future orders, and may be included in Nana Kollects' buyer advisory posts in accordance with our shop policies.", 84),
+    },
+    {
+      title: "Shop Policies",
+      lines: wrapText("By paying, you acknowledge that you have read our FAQs and shop policies posted in our pinned posts and highlights.", 84),
+    },
+  ];
+  const reminderContentHeight = reminderSections.reduce(
+    (height, section, index) => height + 36 + section.lines.length * 27 + (index < reminderSections.length - 1 ? 38 : 0),
+    86,
+  );
+  const reminderHeight = reminderContentHeight + 24;
   svg += `<rect x="${MARGIN}" y="${y}" width="${CONTENT_WIDTH}" height="${reminderHeight}" fill="${COLORS.pale}" stroke="${COLORS.line}" stroke-width="1.5" />`;
   svg += sectionTitle("Payment Reminders", MARGIN + 24, y + 42);
-  let reminderY = y + 78;
-  reminderLines.forEach((line) => {
-    svg += text(line, MARGIN + 24, reminderY, 21, 400, COLORS.muted);
-    reminderY += 27;
+  const reminderDividerStart = MARGIN + 24;
+  const reminderDividerEnd = IMAGE_WIDTH - MARGIN - 24;
+  let reminderY = y + 64;
+  svg += `<line x1="${reminderDividerStart}" y1="${reminderY}" x2="${reminderDividerEnd}" y2="${reminderY}" stroke="${COLORS.line}" stroke-width="1.5" />`;
+  reminderY += 36;
+  reminderSections.forEach((section, index) => {
+    svg += text(section.title, MARGIN + 24, reminderY, 20, 600, COLORS.ink);
+    reminderY += 32;
+    section.lines.forEach((line) => {
+      svg += text(line, MARGIN + 24, reminderY, 21, 400, COLORS.muted);
+      reminderY += 27;
+    });
+    if (index < reminderSections.length - 1) {
+      reminderY += 12;
+      svg += `<line x1="${reminderDividerStart}" y1="${reminderY}" x2="${reminderDividerEnd}" y2="${reminderY}" stroke="${COLORS.line}" stroke-width="1.5" />`;
+      reminderY += 34;
+    }
   });
   y += reminderHeight + 120;
   svg += rule(y);

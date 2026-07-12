@@ -215,14 +215,25 @@ export async function createPaymentRequestPdf(request, config) {
   }
 
   y = optionTop - optionHeight - 10;
-  const validityText = request.validUntil
-    ? `This request is valid until ${dateLabel(request.validUntil)}. Unpaid reservations without cancellation notice may be released, declined for future orders, and may be included in Nana Kollects' buyer advisory posts in accordance with our shop policies.`
-    : "Items are reserved only while the payment request remains pending. Unpaid reservations without cancellation notice may be released, declined for future orders, and may be included in Nana Kollects' buyer advisory posts in accordance with our shop policies.";
-  const reminderLines = [
-    validityText,
-    "By paying, you confirm that you have read Nana Kollects' FAQs and shop policies in our pinned posts/highlights.",
-  ].flatMap((line) => wrapLines(line, 118));
-  const reminderHeight = 24 + reminderLines.length * 9;
+  const reminderSections = [
+    {
+      title: "Reservation Validity",
+      lines: wrapLines(`This payment request is valid until ${dateLabel(request.validUntil)}.`, 100),
+    },
+    {
+      title: "Reservation Policy",
+      lines: wrapLines("Unpaid reservations without cancellation notice may be released, declined for future orders, and may be included in Nana Kollects' buyer advisory posts in accordance with our shop policies.", 100),
+    },
+    {
+      title: "Shop Policies",
+      lines: wrapLines("By paying, you acknowledge that you have read our FAQs and shop policies posted in our pinned posts and highlights.", 100),
+    },
+  ];
+  const reminderContentHeight = reminderSections.reduce(
+    (height, section, index) => height + 12 + section.lines.length * 9 + (index < reminderSections.length - 1 ? 15 : 0),
+    28,
+  );
+  const reminderHeight = reminderContentHeight + 18;
   page.drawRectangle({
     x: margin,
     y: y - reminderHeight,
@@ -233,10 +244,33 @@ export async function createPaymentRequestPdf(request, config) {
     borderWidth: 0.7,
   });
   drawText("PAYMENT REMINDERS", margin + 12, y - 15, 8, bold, colors.muted);
-  let reminderY = y - 29;
-  reminderLines.forEach((line) => {
-    drawText(line, margin + 12, reminderY, 7.5, regular, colors.muted);
-    reminderY -= 9;
+  const dividerStart = margin + 12;
+  const dividerEnd = PAGE.width - margin - 12;
+  let reminderY = y - 25;
+  page.drawLine({
+    start: { x: dividerStart, y: reminderY },
+    end: { x: dividerEnd, y: reminderY },
+    thickness: 0.5,
+    color: colors.line,
+  });
+  reminderY -= 15;
+  reminderSections.forEach((section, index) => {
+    drawText(section.title, margin + 12, reminderY, 7.7, bold, colors.ink);
+    reminderY -= 10;
+    section.lines.forEach((line) => {
+      drawText(line, margin + 12, reminderY, 7.5, regular, colors.muted);
+      reminderY -= 9;
+    });
+    if (index < reminderSections.length - 1) {
+      reminderY -= 6;
+      page.drawLine({
+        start: { x: dividerStart, y: reminderY },
+        end: { x: dividerEnd, y: reminderY },
+        thickness: 0.5,
+        color: colors.line,
+      });
+      reminderY -= 13;
+    }
   });
   y -= reminderHeight + 10;
   if (request.customerNote) {

@@ -95,11 +95,10 @@ export async function createPaymentRequestPdf(request, config) {
   };
 
   drawText("Nana Kollects", margin, y, 22, bold);
-  drawText("PAYMENT REQUEST", PAGE.width - margin - 88, y + 1, 7.8, bold, colors.muted);
   drawText("Hot Picks. Limited Pieces.", margin, y - 15, 8, regular, colors.muted);
-  drawRight(request.requestNumber, PAGE.width - margin, y - 15, 12, bold, colors.accent);
+  drawText(`Payment Request No. ${request.requestNumber}`, margin, y - 31, 10, bold, colors.accent);
 
-  y -= 42;
+  y -= 48;
   rule(y);
 
   y -= 22;
@@ -136,7 +135,12 @@ export async function createPaymentRequestPdf(request, config) {
   sectionTitle("Order Details", margin, y);
   y -= 18;
   const tableTop = y;
-  page.drawRectangle({ x: margin, y: tableTop - 20, width: contentWidth, height: 24, color: colors.pale });
+  page.drawLine({
+    start: { x: margin, y: tableTop - 22 },
+    end: { x: PAGE.width - margin, y: tableTop - 22 },
+    thickness: 0.7,
+    color: colors.line,
+  });
   drawText("Item", margin + 10, tableTop - 12, 8, bold, colors.muted);
   drawText("Qty", margin + 300, tableTop - 12, 8, bold, colors.muted);
   drawRight("Price", margin + 410, tableTop - 12, 8, bold, colors.muted);
@@ -167,19 +171,16 @@ export async function createPaymentRequestPdf(request, config) {
     totalsY -= 15;
   }
   totalsY -= 8;
-  const totalBarY = totalsY - 28;
-  page.drawRectangle({
-    x: margin,
-    y: totalBarY,
-    width: contentWidth,
-    height: 34,
-    color: colors.pale,
-    borderColor: colors.line,
-    borderWidth: 0.7,
+  const totalBarY = totalsY - 22;
+  page.drawLine({
+    start: { x: margin, y: totalBarY + 26 },
+    end: { x: PAGE.width - margin, y: totalBarY + 26 },
+    thickness: 0.7,
+    color: colors.line,
   });
-  drawText(request.shippingMode === SHIPPING_MODES.TO_FOLLOW ? "Amount Due Now" : "Total Amount Due", margin + 12, totalBarY + 11, 10.5, bold, colors.ink);
-  drawRight(pdfMoney(request.totalAmount), PAGE.width - margin - 12, totalBarY + 9, 14, bold, colors.ink);
-  y = totalBarY - 10;
+  drawText(request.shippingMode === SHIPPING_MODES.TO_FOLLOW ? "Amount Due Now" : "Total Amount Due", margin, totalBarY + 9, 10.8, bold, colors.ink);
+  drawRight(pdfMoney(request.totalAmount), PAGE.width - margin, totalBarY + 7, 14.5, bold, colors.ink);
+  y = totalBarY - 8;
   rule(y);
 
   y -= 16;
@@ -235,16 +236,16 @@ export async function createPaymentRequestPdf(request, config) {
     const goTymeDetailsWidth = optionWidth - paymentQrSize - 34;
     drawText("Account Name", goTymeDetailsX, paymentDetailsY, 7.5, regular, colors.muted);
     drawText(config.gotymeAccountName, goTymeDetailsX, paymentDetailsY - 14, 8.2, bold, colors.ink, { maxWidth: goTymeDetailsWidth });
+    drawText("Acc No.", goTymeDetailsX, paymentDetailsY - 38, 7.5, regular, colors.muted);
+    drawText("0144 5161 1994", goTymeDetailsX, paymentDetailsY - 52, 8.2, bold, colors.ink, { maxWidth: goTymeDetailsWidth });
   }
 
   y = optionTop - optionHeight - 10;
   const reminderParagraphs = [
-    request.validUntil
-      ? `This request is valid until ${dateLabel(request.validUntil)}. Unpaid reservations without cancellation notice may be released, declined for future orders, and may be included in Nana Kollects' buyer advisory posts in accordance with our shop policies.`
-      : "Items are reserved only while the payment request remains pending. Unpaid reservations without cancellation notice may be released, declined for future orders, and may be included in Nana Kollects' buyer advisory posts in accordance with our shop policies.",
+    "Unpaid reservations without cancellation notice may be released, declined for future orders, and may be included in Nana Kollects' buyer advisory posts in accordance with our shop policies.",
     "By paying, you acknowledge that you have read our FAQs and shop policies posted in our pinned posts and highlights.",
-  ].map((line) => wrapLines(line, 106));
-  const reminderHeight = 31 + reminderParagraphs.reduce((height, lines) => height + lines.length * 9, 0) + 10;
+  ].map((line) => wrapLines(line, 110));
+  const reminderHeight = 27 + reminderParagraphs.reduce((height, lines) => height + lines.length * 9, 0) + 10;
   page.drawRectangle({
     x: margin,
     y: y - reminderHeight,
@@ -254,18 +255,11 @@ export async function createPaymentRequestPdf(request, config) {
     borderColor: colors.line,
     borderWidth: 0.7,
   });
-  page.drawRectangle({
-    x: margin + 12,
-    y: y - reminderHeight + 12,
-    width: 3,
-    height: reminderHeight - 24,
-    color: colors.accent,
-  });
-  drawText("PAYMENT REMINDERS", margin + 23, y - 15, 8, bold, colors.muted);
+  drawText("PAYMENT REMINDERS", margin + 12, y - 15, 8, bold, colors.muted);
   let reminderY = y - 31;
   reminderParagraphs.forEach((lines, index) => {
     lines.forEach((line) => {
-      drawText(line, margin + 23, reminderY, 7.5, regular, colors.muted);
+      drawText(line, margin + 12, reminderY, 7.5, regular, colors.muted);
       reminderY -= 9;
     });
     if (index < reminderParagraphs.length - 1) reminderY -= 6;

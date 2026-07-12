@@ -38,6 +38,7 @@ export async function createPaymentRequestPdf(request, config) {
   const colors = {
     ink: rgb(0.12, 0.12, 0.14),
     muted: rgb(0.38, 0.39, 0.43),
+    section: rgb(0.31, 0.32, 0.36),
     line: rgb(0.86, 0.86, 0.88),
     accent: rgb(0.88, 0.48, 0.63),
     pale: rgb(0.98, 0.95, 0.96),
@@ -63,12 +64,15 @@ export async function createPaymentRequestPdf(request, config) {
     thickness: 0.7,
     color: colors.line,
   });
-  const sectionTitle = (title, x, drawY) => drawText(title.toUpperCase(), x, drawY, 8, bold, colors.muted);
+  const sectionTitle = (title, x, drawY) => drawText(title.toUpperCase(), x, drawY, 8, bold, colors.section);
   const detail = (label, value, x, drawY, width = 190) => {
     if (!value) return drawY;
     drawText(label, x, drawY, 7.5, regular, colors.muted);
-    drawText(value, x, drawY - 12, 9, bold, colors.ink, { maxWidth: width });
-    return drawY - 29;
+    const lines = wrapLinesByWidth(value, width, 9, bold);
+    lines.forEach((line, index) => {
+      drawText(line, x, drawY - 12 - index * 12, 9, bold, colors.ink);
+    });
+    return drawY - (17 + lines.length * 12);
   };
   const totalRow = (label, value, drawY) => {
     drawText(label, PAGE.width - margin - 190, drawY, 8.5, regular, colors.muted);
@@ -129,7 +133,7 @@ export async function createPaymentRequestPdf(request, config) {
   if (request.customerContact) leftY = detail("Mobile Number", request.customerContact, margin, leftY, columnWidth);
   if (request.shippingAddress) leftY = detail("Shipping Address", request.shippingAddress, margin, leftY, columnWidth);
   const courierLabel = request.shippingMode === SHIPPING_MODES.PICKUP ? "" : displayCourier(request.courier);
-  if (courierLabel) leftY = detail("Courier", courierLabel, margin, leftY, columnWidth);
+  if (courierLabel) leftY = detail("Courier", courierLabel, margin, leftY - 4, columnWidth);
   rightY = detail("Date Issued", dateLabel(request.issuedAt), margin + columnWidth + columnGap, rightY, columnWidth);
   rightY = detail("Payment Status", request.status, margin + columnWidth + columnGap, rightY, columnWidth);
   if (request.validUntil) rightY = detail("Valid Until", dateLabel(request.validUntil), margin + columnWidth + columnGap, rightY, columnWidth);
@@ -157,15 +161,9 @@ export async function createPaymentRequestPdf(request, config) {
   });
   drawCentered("1", margin + 314, itemRowTop, 9.5, regular, colors.ink);
   drawRight(pdfMoney(request.itemPrice), PAGE.width - margin - 10, itemRowTop, 9.5, bold, colors.ink);
-  y = itemRowTop - Math.max(18, itemLines.length * itemLineHeight) - 8;
-  page.drawLine({
-    start: { x: margin, y },
-    end: { x: PAGE.width - margin, y },
-    thickness: 0.6,
-    color: colors.line,
-  });
+  y = itemRowTop - Math.max(18, itemLines.length * itemLineHeight) - 18;
 
-  y -= 14;
+  y -= 10;
   const totalStart = y;
   totalRow("Subtotal", pdfMoney(request.itemPrice), totalStart);
   let totalsY = totalStart - 15;
@@ -182,13 +180,7 @@ export async function createPaymentRequestPdf(request, config) {
     totalRow("Discount", `-${pdfMoney(request.discount)}`, totalsY);
     totalsY -= 15;
   }
-  const totalBarY = totalsY - 18;
-  page.drawLine({
-    start: { x: margin, y: totalBarY + 24 },
-    end: { x: PAGE.width - margin, y: totalBarY + 24 },
-    thickness: 0.6,
-    color: colors.line,
-  });
+  const totalBarY = totalsY - 24;
   drawText(request.shippingMode === SHIPPING_MODES.TO_FOLLOW ? "Amount Due Now" : "Total Amount Due", margin, totalBarY + 8, 11.2, bold, colors.ink);
   drawRight(pdfMoney(request.totalAmount), PAGE.width - margin, totalBarY + 6, 15, bold, colors.ink);
   y = totalBarY - 12;
@@ -261,7 +253,7 @@ export async function createPaymentRequestPdf(request, config) {
   const reminderPaddingTop = 18;
   const reminderTitleGap = 16;
   const reminderLineHeight = 10.5;
-  const reminderPaddingBottom = 18;
+  const reminderPaddingBottom = 28;
   const reminderTextWidth = contentWidth - reminderPaddingX * 2;
   const reminderLines = wrapLinesByWidth("Unpaid reservations without cancellation notice may be released, declined for future orders, and may be included in Nana Kollects' buyer advisory posts in accordance with our shop policies. By paying, you acknowledge that you have read our FAQs and shop policies posted in our pinned posts and highlights.", reminderTextWidth, 7.5, regular);
   const reminderHeight = reminderPaddingTop + 8 + reminderTitleGap + (reminderLines.length * reminderLineHeight) + reminderPaddingBottom;
@@ -297,7 +289,7 @@ export async function createPaymentRequestPdf(request, config) {
     thickness: 0.7,
     color: colors.line,
   });
-  drawCentered("We hope you love your piece. Thank you for shopping with Nana Kollects!", PAGE.width / 2, 35, 8.5, regular, colors.muted);
+  drawCentered("Thank you for taking a little piece of Nana Kollects home with you.", PAGE.width / 2, 35, 8.5, regular, colors.muted);
 
   return document.save();
 }

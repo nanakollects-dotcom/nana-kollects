@@ -303,7 +303,7 @@ export async function createPaymentRequestImage(request, config = {}) {
   y += reminderHeight + 96;
   svg += rule(y);
   y += 48;
-  svg += centerText("We hope you love your piece. Thank you for shopping with Nana Kollects!", IMAGE_WIDTH / 2, y, 24, 400, COLORS.muted);
+  svg += centerText("Thank you for taking a little piece of Nana Kollects home with you.", IMAGE_WIDTH / 2, y, 24, 400, COLORS.muted);
   y += 76;
 
   const svgDocument = `<svg xmlns="http://www.w3.org/2000/svg" width="${IMAGE_WIDTH}" height="${y}" viewBox="0 0 ${IMAGE_WIDTH} ${y}"><rect width="${IMAGE_WIDTH}" height="${y}" fill="#ffffff" />${svg}</svg>`;

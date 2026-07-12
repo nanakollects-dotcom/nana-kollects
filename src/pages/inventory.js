@@ -17,6 +17,7 @@ import { bindForm, emptyState, modal, pageHeader } from "../components/ui.js";
 import { formatMoney } from "../components/format.js";
 import { calculatePaymentRequestTotal, COURIER_OPTIONS, displayCourier, isPaymentConfigurationComplete, localDateInputValue, PAYMENT_METHODS, SHIPPING_MODE_LABELS, SHIPPING_MODES, validatePaymentRequestRequiredFields } from "../core/paymentRequests.js";
 import { createPaymentRequestPdf, downloadPaymentRequestPdf } from "../services/paymentRequestPdf.js";
+import { createPaymentRequestImage, downloadPaymentRequestImage } from "../services/paymentRequestImage.js";
 
 let editingId = null;
 let isModalOpen = false;
@@ -335,7 +336,8 @@ function inventoryForm(store) {
                     <div><span>Request No</span><strong>${escapeText(pendingRequest.requestNumber)}</strong></div>
                   </div>
                   <div class="request-actions">
-                    <button class="table-action" type="button" data-download-request="${pendingRequest.id}">Download</button>
+                    <button class="table-action" type="button" data-download-request="${pendingRequest.id}">Download PDF</button>
+                    <button class="table-action" type="button" data-download-image-request="${pendingRequest.id}">Save as Image</button>
                     <button class="table-action primary-action" type="button" data-paid-request="${pendingRequest.id}">Mark Paid</button>
                     <button class="table-action danger" type="button" data-cancel-request="${pendingRequest.id}">Cancel Payment Request</button>
                   </div>
@@ -562,7 +564,8 @@ function renderPaymentRequests(store) {
       <td class="money-cell">${formatMoney(request.totalAmount)}</td>
       <td><span class="pill ${requestStatusClass(request.status)}">${request.status}</span></td>
       <td class="actions-cell request-actions">
-        <button class="table-action" type="button" data-download-request="${request.id}">Download</button>
+        <button class="table-action" type="button" data-download-request="${request.id}">Download PDF</button>
+        <button class="table-action" type="button" data-download-image-request="${request.id}">Save as Image</button>
         ${request.status === "Pending" ? `
           <button class="table-action primary-action" type="button" data-paid-request="${request.id}">Mark Paid</button>
           <button class="table-action danger" type="button" data-cancel-request="${request.id}">Cancel</button>
@@ -1099,7 +1102,18 @@ export function bindInventoryPage(root, store, notify, refresh) {
           gotymeQrImage: store.paymentConfig.gotymeQrImage,
         });
         downloadPaymentRequestPdf(bytes, request.requestNumber);
-        notify("Payment Request downloaded.");
+        notify("Payment Request PDF downloaded.");
+      }
+
+      if (button.dataset.downloadImageRequest) {
+        const request = store.paymentRequests.find((entry) => entry.id === button.dataset.downloadImageRequest);
+        if (!request) throw new Error("Payment request not found.");
+        const blob = await createPaymentRequestImage(request, {
+          ...request.paymentConfig,
+          gotymeQrImage: store.paymentConfig.gotymeQrImage,
+        });
+        downloadPaymentRequestImage(blob, request.requestNumber);
+        notify("Payment Request image saved.");
       }
 
       if (button.dataset.paidRequest) {

@@ -1,0 +1,289 @@
+﻿import { formatMoney } from "../components/format.js";
+import { displayCourier, SHIPPING_MODES } from "../core/paymentRequests.js";
+
+const IMAGE_WIDTH = 1080;
+const MARGIN = 72;
+const CONTENT_WIDTH = IMAGE_WIDTH - MARGIN * 2;
+const COLORS = {
+  ink: "#1f2329",
+  muted: "#626975",
+  line: "#d8dbe0",
+  accent: "#e07ba0",
+  pale: "#fff5f8",
+  white: "#ffffff",
+};
+
+const cleanText = (value) => String(value ?? "").replace(/[^\x20-\x7E]/g, " ").replace(/\s+/g, " ").trim();
+const xmlText = (value) => cleanText(value)
+  .replace(/&/g, "&amp;")
+  .replace(/</g, "&lt;")
+  .replace(/>/g, "&gt;")
+  .replace(/"/g, "&quot;");
+const money = (value) => formatMoney(value).replace(/[^0-9.,-]+/g, "PHP ").trim();
+const safeNumber = (requestNumber) => String(requestNumber || "Payment-Request").replace(/[^A-Za-z0-9-]/g, "-");
+
+function dateLabel(value) {
+  if (!value) return "";
+  const text = String(value);
+  const match = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  const date = match
+    ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+    : new Date(value);
+  return Number.isNaN(date.getTime())
+    ? ""
+    : new Intl.DateTimeFormat("en-PH", { year: "numeric", month: "short", day: "numeric" }).format(date);
+}
+
+function wrapText(value, maxChars) {
+  const words = cleanText(value).split(" ").filter(Boolean);
+  const lines = [];
+  let line = "";
+  words.forEach((word) => {
+    const next = line ? `${line} ${word}` : word;
+    if (next.length > maxChars && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = next;
+    }
+  });
+  if (line) lines.push(line);
+  return lines;
+}
+
+function text(value, x, y, size = 24, weight = 400, color = COLORS.ink, extra = "") {
+  return `<text x="${x}" y="${y}" font-family="Inter, Arial, sans-serif" font-size="${size}" font-weight="${weight}" fill="${color}" ${extra}>${xmlText(value)}</text>`;
+}
+
+function rightText(value, x, y, size = 24, weight = 400, color = COLORS.ink) {
+  return text(value, x, y, size, weight, color, 'text-anchor="end"');
+}
+
+function rule(y) {
+  return `<line x1="${MARGIN}" y1="${y}" x2="${IMAGE_WIDTH - MARGIN}" y2="${y}" stroke="${COLORS.line}" stroke-width="1.5" />`;
+}
+
+function sectionTitle(value, x, y) {
+  return text(String(value).toUpperCase(), x, y, 23, 700, COLORS.muted);
+}
+
+function detail(label, value, x, y, width = 360) {
+  if (!value) return { svg: "", y };
+  const lines = wrapText(value, Math.max(20, Math.floor(width / 13)));
+  let svg = text(label, x, y, 21, 400, COLORS.muted);
+  let cursor = y + 29;
+  lines.forEach((line, index) => {
+    svg += text(line, x, cursor, 25, 700, COLORS.ink);
+    cursor += index === lines.length - 1 ? 0 : 28;
+  });
+  return { svg, y: cursor + 31 };
+}
+function paymentDetail(label, value, x, y, width) {
+  const lines = wrapText(value, Math.max(14, Math.floor(width / 11)));
+  let svg = text(label, x, y, 21, 400, COLORS.muted);
+  let cursor = y + 34;
+  lines.forEach((line) => {
+    svg += text(line, x, cursor, 22, 700, COLORS.ink);
+    cursor += 26;
+  });
+  return { svg, y: cursor + 22 };
+}
+
+function totalRow(label, value, y, strong = false) {
+  return rightText(label, IMAGE_WIDTH - MARGIN - 230, y, strong ? 28 : 23, strong ? 700 : 400, strong ? COLORS.ink : COLORS.muted)
+    + rightText(value, IMAGE_WIDTH - MARGIN, y, strong ? 34 : 26, 700, COLORS.ink);
+}
+
+async function imageSourceToDataUrl(source) {
+  const imageSource = String(source || "");
+  if (imageSource.startsWith("data:image/")) return imageSource;
+  const response = await fetch(imageSource);
+  if (!response.ok) throw new Error("Could not load payment QR image.");
+  const blob = await response.blob();
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error("Could not read payment QR image."));
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function svgToPngBlob(svg) {
+  const svgBlob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
+  const url = URL.createObjectURL(svgBlob);
+  try {
+    const image = new Image();
+    const loaded = new Promise((resolve, reject) => {
+      image.onload = resolve;
+      image.onerror = () => reject(new Error("Could not render payment request image."));
+    });
+    image.src = url;
+    await loaded;
+    const canvas = document.createElement("canvas");
+    canvas.width = IMAGE_WIDTH;
+    canvas.height = image.naturalHeight;
+    const context = canvas.getContext("2d");
+    context.fillStyle = COLORS.white;
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(image, 0, 0);
+    return await new Promise((resolve, reject) => {
+      canvas.toBlob((blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error("Could not export payment request image."));
+      }, "image/png");
+    });
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+export async function createPaymentRequestImage(request, config = {}) {
+  const gcashQrSource = String(config.gcashQrImage || "/payment/gcash-qr.png").replace("/payment/gcash-qr.jpg", "/payment/gcash-qr.png");
+  const gotymeQrSource = String(config.gotymeQrImage || "/payment/gotyme-instapay-qr.png").replace("/payment/gotyme-instapay-qr.jpg", "/payment/gotyme-instapay-qr.png");
+  const [gcashQr, gotymeQr] = await Promise.all([
+    imageSourceToDataUrl(gcashQrSource),
+    imageSourceToDataUrl(gotymeQrSource),
+  ]);
+
+  let svg = "";
+  let y = 82;
+
+  svg += text("Nana Kollects", MARGIN, y, 48, 800);
+  y += 36;
+  svg += text("Hot Picks. Limited Pieces.", MARGIN, y, 22, 400, COLORS.muted);
+  y += 38;
+  svg += text(`Payment Request No. ${request.requestNumber}`, MARGIN, y, 25, 700, COLORS.accent);
+  y += 42;
+  svg += rule(y);
+
+  y += 58;
+  const leftX = MARGIN;
+  const rightX = 568;
+  svg += sectionTitle("Customer", leftX, y);
+  svg += sectionTitle("Request Details", rightX, y);
+  let leftY = y + 42;
+  let rightY = y + 42;
+  let rendered = detail("Customer Name", request.customerName, leftX, leftY, 410);
+  svg += rendered.svg;
+  leftY = rendered.y;
+  rendered = detail("Mobile Number", request.customerContact, leftX, leftY, 410);
+  svg += rendered.svg;
+  leftY = rendered.y;
+  rendered = detail("Shipping Address", request.shippingAddress, leftX, leftY, 410);
+  svg += rendered.svg;
+  leftY = rendered.y;
+  const courierLabel = request.shippingMode === SHIPPING_MODES.PICKUP ? "" : displayCourier(request.courier);
+  rendered = detail("Courier", courierLabel, leftX, leftY, 410);
+  svg += rendered.svg;
+  leftY = rendered.y;
+
+  rendered = detail("Date Issued", dateLabel(request.issuedAt), rightX, rightY, 400);
+  svg += rendered.svg;
+  rightY = rendered.y;
+  rendered = detail("Payment Status", request.status, rightX, rightY, 400);
+  svg += rendered.svg;
+  rightY = rendered.y;
+  rendered = detail("Valid Until", dateLabel(request.validUntil), rightX, rightY, 400);
+  svg += rendered.svg;
+  rightY = rendered.y;
+  y = Math.max(leftY, rightY) + 24;
+  svg += rule(y);
+
+  y += 56;
+  svg += sectionTitle("Order Details", MARGIN, y);
+  y += 44;
+  svg += `<rect x="${MARGIN}" y="${y}" width="${CONTENT_WIDTH}" height="58" fill="${COLORS.pale}" />`;
+  svg += text("Item", MARGIN + 18, y + 37, 22, 700, COLORS.muted);
+  svg += text("Qty", 630, y + 37, 22, 700, COLORS.muted);
+  svg += rightText("Price", 830, y + 37, 22, 700, COLORS.muted);
+  svg += rightText("Amount", IMAGE_WIDTH - MARGIN - 14, y + 37, 22, 700, COLORS.muted);
+  y += 102;
+  svg += text(request.itemName, MARGIN + 18, y, 28, 700, COLORS.ink);
+  svg += text("1", 638, y, 28, 400, COLORS.ink);
+  svg += rightText(money(request.itemPrice), 830, y, 28, 400, COLORS.ink);
+  svg += rightText(money(request.itemPrice), IMAGE_WIDTH - MARGIN - 14, y, 28, 700, COLORS.ink);
+  y += 44;
+  svg += rule(y);
+
+  y += 50;
+  svg += totalRow("Subtotal", money(request.itemPrice), y);
+  y += 38;
+  if (request.shippingMode === SHIPPING_MODES.TO_FOLLOW) {
+    svg += totalRow("Shipping Fee", "To follow", y);
+    y += 38;
+  }
+  if (request.shippingMode === SHIPPING_MODES.FEE_NOW && request.shippingFee > 0) {
+    svg += totalRow("Shipping Fee", money(request.shippingFee), y);
+    y += 38;
+  }
+  if (request.discount > 0) {
+    svg += totalRow("Discount", `-${money(request.discount)}`, y);
+    y += 38;
+  }
+  svg += `<line x1="670" y1="${y - 10}" x2="${IMAGE_WIDTH - MARGIN}" y2="${y - 10}" stroke="${COLORS.line}" stroke-width="1.5" />`;
+  y += 30;
+  svg += totalRow(request.shippingMode === SHIPPING_MODES.TO_FOLLOW ? "Amount Due Now" : "Total Amount Due", money(request.totalAmount), y, true);
+  y += 36;
+  svg += rule(y);
+
+  y += 48;
+  svg += sectionTitle("Payment Options", MARGIN, y);
+  y += 22;
+  const cardY = y;
+  const cardWidth = (CONTENT_WIDTH - 30) / 2;
+  const cardHeight = 270;
+  const qrSize = 184;
+  svg += `<rect x="${MARGIN}" y="${cardY}" width="${cardWidth}" height="${cardHeight}" fill="#ffffff" stroke="${COLORS.line}" stroke-width="1.5" />`;
+  svg += `<rect x="${MARGIN + cardWidth + 30}" y="${cardY}" width="${cardWidth}" height="${cardHeight}" fill="#ffffff" stroke="${COLORS.line}" stroke-width="1.5" />`;
+  svg += `<image href="${xmlText(gcashQr)}" x="${MARGIN + 26}" y="${cardY + 42}" width="${qrSize}" height="${qrSize}" preserveAspectRatio="xMidYMid meet" />`;
+  const gcashTextX = MARGIN + 26 + qrSize + 22;
+  const paymentTextWidth = cardWidth - qrSize - 74;
+  rendered = paymentDetail("Account Name", config.gcashAccountName, gcashTextX, cardY + 82, paymentTextWidth);
+  svg += rendered.svg;
+  rendered = paymentDetail("Mobile Number", config.gcashMobileNumber, gcashTextX, rendered.y, paymentTextWidth);
+  svg += rendered.svg;
+
+  const gotymeCardX = MARGIN + cardWidth + 30;
+  svg += `<image href="${xmlText(gotymeQr)}" x="${gotymeCardX + 26}" y="${cardY + 42}" width="${qrSize}" height="${qrSize}" preserveAspectRatio="xMidYMid meet" />`;
+  const gotymeTextX = gotymeCardX + 26 + qrSize + 22;
+  rendered = paymentDetail("Account Name", config.gotymeAccountName, gotymeTextX, cardY + 94, paymentTextWidth);
+  svg += rendered.svg;
+  y = cardY + cardHeight + 34;
+
+  const validityText = request.validUntil
+    ? `This request is valid until ${dateLabel(request.validUntil)}. Unpaid reservations without cancellation notice may be released, declined for future orders, and may be included in Nana Kollects' buyer advisory posts in accordance with our shop policies.`
+    : "Items are reserved only while the payment request remains pending. Unpaid reservations without cancellation notice may be released, declined for future orders, and may be included in Nana Kollects' buyer advisory posts in accordance with our shop policies.";
+  const reminderLines = [
+    validityText,
+    "By paying, you confirm that you have read Nana Kollects' FAQs and shop policies in our pinned posts/highlights.",
+  ].flatMap((line) => wrapText(line, 88));
+  const reminderHeight = 70 + reminderLines.length * 27;
+  svg += `<rect x="${MARGIN}" y="${y}" width="${CONTENT_WIDTH}" height="${reminderHeight}" fill="${COLORS.pale}" stroke="${COLORS.line}" stroke-width="1.5" />`;
+  svg += sectionTitle("Payment Reminders", MARGIN + 24, y + 42);
+  let reminderY = y + 78;
+  reminderLines.forEach((line) => {
+    svg += text(line, MARGIN + 24, reminderY, 21, 400, COLORS.muted);
+    reminderY += 27;
+  });
+  y += reminderHeight + 120;
+  svg += rule(y);
+  y += 48;
+  svg += text("We hope you love your piece. Thank you for shopping with Nana Kollects!", MARGIN, y, 24, 400, COLORS.muted);
+  y += 76;
+
+  const svgDocument = `<svg xmlns="http://www.w3.org/2000/svg" width="${IMAGE_WIDTH}" height="${y}" viewBox="0 0 ${IMAGE_WIDTH} ${y}"><rect width="${IMAGE_WIDTH}" height="${y}" fill="#ffffff" />${svg}</svg>`;
+  return svgToPngBlob(svgDocument);
+}
+
+export function downloadPaymentRequestImage(blob, requestNumber) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `Nana-Kollects-Payment-Request-${safeNumber(requestNumber)}.png`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+

@@ -218,15 +218,14 @@ export async function createPaymentRequestImage(request, config = {}) {
   y += 38;
   svg += `<line x1="${MARGIN}" y1="${y + 58}" x2="${IMAGE_WIDTH - MARGIN}" y2="${y + 58}" stroke="${COLORS.line}" stroke-width="1.5" />`;
   svg += text("Item", MARGIN + 18, y + 37, 22, 700, COLORS.muted);
-  svg += text("Qty", 630, y + 37, 22, 700, COLORS.muted);
-  svg += rightText("Price", 830, y + 37, 22, 700, COLORS.muted);
-  svg += rightText("Amount", IMAGE_WIDTH - MARGIN - 14, y + 37, 22, 700, COLORS.muted);
-  y += 88;
-  svg += text(request.itemName, MARGIN + 18, y, 28, 700, COLORS.ink);
-  svg += text("1", 638, y, 28, 400, COLORS.ink);
-  svg += rightText(money(request.itemPrice), 830, y, 28, 400, COLORS.ink);
-  svg += rightText(money(request.itemPrice), IMAGE_WIDTH - MARGIN - 14, y, 28, 700, COLORS.ink);
-  y += 44;
+  svg += centerText("Qty", 650, y + 37, 22, 700, COLORS.muted);
+  svg += rightText("Amount", IMAGE_WIDTH - MARGIN - 18, y + 37, 22, 700, COLORS.muted);
+  y += 86;
+  const itemRowY = y;
+  svg += text(request.itemName, MARGIN + 18, itemRowY, 28, 700, COLORS.ink);
+  svg += centerText("1", 650, itemRowY, 28, 400, COLORS.ink);
+  svg += rightText(money(request.itemPrice), IMAGE_WIDTH - MARGIN - 18, itemRowY, 28, 700, COLORS.ink);
+  y += 46;
   svg += rule(y);
 
   y += 36;
@@ -278,20 +277,14 @@ export async function createPaymentRequestImage(request, config = {}) {
   svg += rendered.svg;
   y = cardY + cardHeight + 34;
 
-  const reminderParagraphs = [
-    "Unpaid reservations without cancellation notice may be released, declined for future orders, and may be included in Nana Kollects' buyer advisory posts in accordance with our shop policies.",
-    "By paying, you acknowledge that you have read our FAQs and shop policies posted in our pinned posts and highlights.",
-  ].map((line) => wrapText(line, 96));
-  const reminderHeight = 74 + reminderParagraphs.reduce((height, lines) => height + lines.length * 27, 0) + 22;
+  const reminderLines = wrapText("Unpaid reservations without cancellation notice may be released, declined for future orders, and may be included in Nana Kollects' buyer advisory posts in accordance with our shop policies. By paying, you acknowledge that you have read our FAQs and shop policies posted in our pinned posts and highlights.", 96);
+  const reminderHeight = 74 + reminderLines.length * 27 + 22;
   svg += `<rect x="${MARGIN}" y="${y}" width="${CONTENT_WIDTH}" height="${reminderHeight}" fill="${COLORS.pale}" stroke="${COLORS.line}" stroke-width="1.5" />`;
   svg += sectionTitle("Payment Reminders", MARGIN + 24, y + 42);
   let reminderY = y + 78;
-  reminderParagraphs.forEach((lines, index) => {
-    lines.forEach((line) => {
-      svg += text(line, MARGIN + 24, reminderY, 21, 400, COLORS.muted);
-      reminderY += 27;
-    });
-    if (index < reminderParagraphs.length - 1) reminderY += 18;
+  reminderLines.forEach((line) => {
+    svg += text(line, MARGIN + 24, reminderY, 21, 400, COLORS.muted);
+    reminderY += 27;
   });
   y += reminderHeight + 96;
   svg += rule(y);

@@ -142,13 +142,11 @@ export async function createPaymentRequestPdf(request, config) {
     color: colors.line,
   });
   drawText("Item", margin + 10, tableTop - 12, 8, bold, colors.muted);
-  drawText("Qty", margin + 300, tableTop - 12, 8, bold, colors.muted);
-  drawRight("Price", margin + 410, tableTop - 12, 8, bold, colors.muted);
+  drawCentered("Qty", margin + 314, tableTop - 12, 8, bold, colors.muted);
   drawRight("Amount", PAGE.width - margin - 10, tableTop - 12, 8, bold, colors.muted);
   y = tableTop - 38;
-  drawText(request.itemName, margin + 10, y, 9.5, bold, colors.ink, { maxWidth: 270 });
-  drawText("1", margin + 303, y, 9.5, regular, colors.ink);
-  drawRight(pdfMoney(request.itemPrice), margin + 410, y, 9.5, regular, colors.ink);
+  drawText(request.itemName, margin + 10, y, 9.5, bold, colors.ink, { maxWidth: 330 });
+  drawCentered("1", margin + 314, y, 9.5, regular, colors.ink);
   drawRight(pdfMoney(request.itemPrice), PAGE.width - margin - 10, y, 9.5, bold, colors.ink);
   y -= 18;
   rule(y);
@@ -241,11 +239,8 @@ export async function createPaymentRequestPdf(request, config) {
   }
 
   y = optionTop - optionHeight - 10;
-  const reminderParagraphs = [
-    "Unpaid reservations without cancellation notice may be released, declined for future orders, and may be included in Nana Kollects' buyer advisory posts in accordance with our shop policies.",
-    "By paying, you acknowledge that you have read our FAQs and shop policies posted in our pinned posts and highlights.",
-  ].map((line) => wrapLines(line, 110));
-  const reminderHeight = 27 + reminderParagraphs.reduce((height, lines) => height + lines.length * 9, 0) + 10;
+  const reminderLines = wrapLines("Unpaid reservations without cancellation notice may be released, declined for future orders, and may be included in Nana Kollects' buyer advisory posts in accordance with our shop policies. By paying, you acknowledge that you have read our FAQs and shop policies posted in our pinned posts and highlights.", 110);
+  const reminderHeight = 27 + reminderLines.length * 9 + 10;
   page.drawRectangle({
     x: margin,
     y: y - reminderHeight,
@@ -257,12 +252,9 @@ export async function createPaymentRequestPdf(request, config) {
   });
   drawText("PAYMENT REMINDERS", margin + 12, y - 15, 8, bold, colors.muted);
   let reminderY = y - 31;
-  reminderParagraphs.forEach((lines, index) => {
-    lines.forEach((line) => {
-      drawText(line, margin + 12, reminderY, 7.5, regular, colors.muted);
-      reminderY -= 9;
-    });
-    if (index < reminderParagraphs.length - 1) reminderY -= 6;
+  reminderLines.forEach((line) => {
+    drawText(line, margin + 12, reminderY, 7.5, regular, colors.muted);
+    reminderY -= 9;
   });
   y -= reminderHeight + 10;
   if (request.customerNote) {

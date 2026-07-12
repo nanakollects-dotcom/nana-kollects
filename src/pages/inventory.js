@@ -336,8 +336,8 @@ function inventoryForm(store) {
                     <div><span>Request No</span><strong>${escapeText(pendingRequest.requestNumber)}</strong></div>
                   </div>
                   <div class="request-actions">
+                    <button class="table-action primary-action" type="button" data-download-image-request="${pendingRequest.id}">Save as Image</button>
                     <button class="table-action" type="button" data-download-request="${pendingRequest.id}">Download PDF</button>
-                    <button class="table-action" type="button" data-download-image-request="${pendingRequest.id}">Save as Image</button>
                     <button class="table-action primary-action" type="button" data-paid-request="${pendingRequest.id}">Mark Paid</button>
                     <button class="table-action danger" type="button" data-cancel-request="${pendingRequest.id}">Cancel Payment Request</button>
                   </div>
@@ -564,8 +564,8 @@ function renderPaymentRequests(store) {
       <td class="money-cell">${formatMoney(request.totalAmount)}</td>
       <td><span class="pill ${requestStatusClass(request.status)}">${request.status}</span></td>
       <td class="actions-cell request-actions">
+        <button class="table-action primary-action" type="button" data-download-image-request="${request.id}">Save as Image</button>
         <button class="table-action" type="button" data-download-request="${request.id}">Download PDF</button>
-        <button class="table-action" type="button" data-download-image-request="${request.id}">Save as Image</button>
         ${request.status === "Pending" ? `
           <button class="table-action primary-action" type="button" data-paid-request="${request.id}">Mark Paid</button>
           <button class="table-action danger" type="button" data-cancel-request="${request.id}">Cancel</button>
@@ -969,11 +969,11 @@ export function bindInventoryPage(root, store, notify, refresh) {
           paymentConfig: store.paymentConfig,
           ...amounts,
         });
-        const bytes = await createPaymentRequestPdf(result.request, {
+        const blob = await createPaymentRequestImage(result.request, {
           ...result.request.paymentConfig,
           gotymeQrImage: result.store.paymentConfig.gotymeQrImage,
         });
-        downloadPaymentRequestPdf(bytes, result.request.requestNumber);
+        downloadPaymentRequestImage(blob, result.request.requestNumber);
         paymentRequestItemId = null;
         notify(`${result.request.requestNumber} created. Item reserved.`);
         refresh();

@@ -1,4 +1,4 @@
-﻿import { formatMoney } from "../components/format.js";
+import { formatMoney } from "../components/format.js";
 import { displayCourier, SHIPPING_MODES } from "../core/paymentRequests.js";
 
 const IMAGE_WIDTH = 1080;
@@ -78,6 +78,7 @@ function detail(label, value, x, y, width = 360) {
   });
   return { svg, y: cursor + 31 };
 }
+
 function paymentDetail(label, value, x, y, width) {
   const lines = wrapText(value, Math.max(14, Math.floor(width / 11)));
   let svg = text(label, x, y, 21, 400, COLORS.muted);
@@ -94,21 +95,34 @@ function totalRow(label, value, y, strong = false) {
     + rightText(value, IMAGE_WIDTH - MARGIN, y, strong ? 34 : 26, 700, COLORS.ink);
 }
 
-async function imageSourceToDataUrl(source) {
-  const imageSource = String(source || "");
+function paymentQrSource(source, fallback) {
+  const imageSource = String(source || fallback).trim() || fallback;
   if (imageSource.startsWith("data:image/")) return imageSource;
-  const response = await fetch(imageSource);
-  if (!response.ok) throw new Error("Could not load payment QR image.");
-  const blob = await response.blob();
-  return await new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error("Could not read payment QR image."));
-    reader.readAsDataURL(blob);
+  return imageSource
+    .replace("/payment/gcash-qr.jpg", "/payment/gcash-qr.png")
+    .replace("/payment/gotyme-instapay-qr.jpg", "/payment/gotyme-instapay-qr.png");
+}
+
+function loadImage(source, label) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error(`Could not load ${label} QR image. Please check the payment QR asset and try again.`));
+    image.src = source;
   });
 }
 
-async function svgToPngBlob(svg) {
+function drawContainedImage(context, image, x, y, width, height) {
+  const sourceWidth = image.naturalWidth || image.width;
+  const sourceHeight = image.naturalHeight || image.height;
+  if (!sourceWidth || !sourceHeight) throw new Error("Payment QR image loaded without dimensions.");
+  const scale = Math.min(width / sourceWidth, height / sourceHeight);
+  const drawWidth = sourceWidth * scale;
+  const drawHeight = sourceHeight * scale;
+  context.drawImage(image, x + (width - drawWidth) / 2, y + (height - drawHeight) / 2, drawWidth, drawHeight);
+}
+
+async function svgToPngBlob(svg, overlays = []) {
   const svgBlob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
   const url = URL.createObjectURL(svgBlob);
   try {
@@ -126,6 +140,9 @@ async function svgToPngBlob(svg) {
     context.fillStyle = COLORS.white;
     context.fillRect(0, 0, canvas.width, canvas.height);
     context.drawImage(image, 0, 0);
+    overlays.forEach(({ image: overlayImage, x, y, width, height }) => {
+      drawContainedImage(context, overlayImage, x, y, width, height);
+    });
     return await new Promise((resolve, reject) => {
       canvas.toBlob((blob) => {
         if (blob) resolve(blob);
@@ -138,11 +155,11 @@ async function svgToPngBlob(svg) {
 }
 
 export async function createPaymentRequestImage(request, config = {}) {
-  const gcashQrSource = String(config.gcashQrImage || "/payment/gcash-qr.png").replace("/payment/gcash-qr.jpg", "/payment/gcash-qr.png");
-  const gotymeQrSource = String(config.gotymeQrImage || "/payment/gotyme-instapay-qr.png").replace("/payment/gotyme-instapay-qr.jpg", "/payment/gotyme-instapay-qr.png");
+  const gcashQrSource = paymentQrSource(config.gcashQrImage, "/payment/gcash-qr.png");
+  const gotymeQrSource = paymentQrSource(config.gotymeQrImage, "/payment/gotyme-instapay-qr.png");
   const [gcashQr, gotymeQr] = await Promise.all([
-    imageSourceToDataUrl(gcashQrSource),
-    imageSourceToDataUrl(gotymeQrSource),
+    loadImage(gcashQrSource, "GCash"),
+    loadImage(gotymeQrSource, "GoTyme / InstaPay"),
   ]);
 
   let svg = "";
@@ -233,9 +250,11 @@ export async function createPaymentRequestImage(request, config = {}) {
   const cardWidth = (CONTENT_WIDTH - 30) / 2;
   const cardHeight = 270;
   const qrSize = 184;
+  const gcashQrPlacement = { image: gcashQr, x: MARGIN + 26, y: cardY + 42, width: qrSize, height: qrSize };
+  const gotymeCardX = MARGIN + cardWidth + 30;
+  const gotymeQrPlacement = { image: gotymeQr, x: gotymeCardX + 26, y: cardY + 42, width: qrSize, height: qrSize };
   svg += `<rect x="${MARGIN}" y="${cardY}" width="${cardWidth}" height="${cardHeight}" fill="#ffffff" stroke="${COLORS.line}" stroke-width="1.5" />`;
-  svg += `<rect x="${MARGIN + cardWidth + 30}" y="${cardY}" width="${cardWidth}" height="${cardHeight}" fill="#ffffff" stroke="${COLORS.line}" stroke-width="1.5" />`;
-  svg += `<image href="${xmlText(gcashQr)}" x="${MARGIN + 26}" y="${cardY + 42}" width="${qrSize}" height="${qrSize}" preserveAspectRatio="xMidYMid meet" />`;
+  svg += `<rect x="${gotymeCardX}" y="${cardY}" width="${cardWidth}" height="${cardHeight}" fill="#ffffff" stroke="${COLORS.line}" stroke-width="1.5" />`;
   const gcashTextX = MARGIN + 26 + qrSize + 22;
   const paymentTextWidth = cardWidth - qrSize - 74;
   rendered = paymentDetail("Account Name", config.gcashAccountName, gcashTextX, cardY + 82, paymentTextWidth);
@@ -243,8 +262,6 @@ export async function createPaymentRequestImage(request, config = {}) {
   rendered = paymentDetail("Mobile Number", config.gcashMobileNumber, gcashTextX, rendered.y, paymentTextWidth);
   svg += rendered.svg;
 
-  const gotymeCardX = MARGIN + cardWidth + 30;
-  svg += `<image href="${xmlText(gotymeQr)}" x="${gotymeCardX + 26}" y="${cardY + 42}" width="${qrSize}" height="${qrSize}" preserveAspectRatio="xMidYMid meet" />`;
   const gotymeTextX = gotymeCardX + 26 + qrSize + 22;
   rendered = paymentDetail("Account Name", config.gotymeAccountName, gotymeTextX, cardY + 94, paymentTextWidth);
   svg += rendered.svg;
@@ -272,7 +289,7 @@ export async function createPaymentRequestImage(request, config = {}) {
   y += 76;
 
   const svgDocument = `<svg xmlns="http://www.w3.org/2000/svg" width="${IMAGE_WIDTH}" height="${y}" viewBox="0 0 ${IMAGE_WIDTH} ${y}"><rect width="${IMAGE_WIDTH}" height="${y}" fill="#ffffff" />${svg}</svg>`;
-  return svgToPngBlob(svgDocument);
+  return svgToPngBlob(svgDocument, [gcashQrPlacement, gotymeQrPlacement]);
 }
 
 export function downloadPaymentRequestImage(blob, requestNumber) {
@@ -281,9 +298,11 @@ export function downloadPaymentRequestImage(blob, requestNumber) {
   link.href = url;
   link.download = `Nana-Kollects-Payment-Request-${safeNumber(requestNumber)}.png`;
   document.body.appendChild(link);
-  link.click();
+  if ("download" in HTMLAnchorElement.prototype) {
+    link.click();
+  } else {
+    window.open(url, "_blank", "noopener");
+  }
   link.remove();
-  URL.revokeObjectURL(url);
+  window.setTimeout(() => URL.revokeObjectURL(url), 30000);
 }
-
-

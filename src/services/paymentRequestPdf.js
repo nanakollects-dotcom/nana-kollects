@@ -279,7 +279,7 @@ export async function createPaymentRequestPdf(request, config) {
     thickness: 0.7,
     color: colors.line,
   });
-  drawCentered("We hope you love your piece. Thank you for shopping with Nana Kollects!", PAGE.width / 2, 35, 8.5, regular, colors.muted);
+  drawCentered("Thank you for taking a little piece of Nana Kollects home with you.", PAGE.width / 2, 35, 8.5, regular, colors.muted);
 
   return document.save();
 }

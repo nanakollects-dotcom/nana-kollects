@@ -2195,6 +2195,14 @@ td:nth-child(n + 3) {
   min-height: 64px;
 }
 
+.payment-request-field-error {
+  display: block;
+  margin-top: 5px;
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 650;
+}
+
 .inventory-modal-form .modal-section:nth-of-type(2) {
   order: 3;
 }

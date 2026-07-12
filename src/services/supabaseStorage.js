@@ -1,7 +1,7 @@
 import { supabase } from "./supabaseClient.js";
 import { emptyStore, loadStore, normalizeStore } from "./storage.js";
 import { hasKnownCost, normalizeCostInput } from "../core/costs.js";
-import { COURIER_OPTIONS, DEFAULT_PAYMENT_CONFIG, normalizeShippingMode, SHIPPING_MODES } from "../core/paymentRequests.js";
+import { COURIER_OPTIONS, DEFAULT_PAYMENT_CONFIG, normalizeShippingMode, SHIPPING_MODES, validatePaymentRequestRequiredFields } from "../core/paymentRequests.js";
 
 const STATUSES = {
   AVAILABLE: "Available",
@@ -344,6 +344,10 @@ export async function saveSupabasePaymentConfig(input) {
 }
 
 export async function createSupabasePaymentRequest(input) {
+  const requiredFields = validatePaymentRequestRequiredFields(input);
+  const firstRequiredError = Object.values(requiredFields.errors)[0];
+  assert(!firstRequiredError, firstRequiredError);
+
   const shippingMode = normalizeShippingMode(input.shippingMode);
   const courier = input.courier === "Other"
     ? String(input.customCourier || "").trim()
@@ -354,8 +358,6 @@ export async function createSupabasePaymentRequest(input) {
     discount: money(input.discount),
   };
 
-  assert(String(input.customerName || "").trim(), "Customer name is required.");
-  assert(String(input.customerContact || "").trim(), "Customer contact is required.");
   assert(amounts.itemPrice >= 0, "Selling price must be zero or higher.");
   assert(amounts.shippingFee >= 0, "Shipping fee must be zero or higher.");
   assert(amounts.discount >= 0, "Discount must be zero or higher.");
@@ -364,15 +366,15 @@ export async function createSupabasePaymentRequest(input) {
 
   const { data, error } = await supabase.rpc("create_payment_request", {
     p_inventory_item_id: input.itemId,
-    p_customer_name: String(input.customerName || "").trim(),
-    p_customer_contact: String(input.customerContact || "").trim(),
+    p_customer_name: requiredFields.values.customerName,
+    p_customer_contact: requiredFields.values.customerContact,
     p_shipping_address: String(input.shippingAddress || "").trim(),
     p_item_price: amounts.itemPrice,
     p_shipping_fee: amounts.shippingFee,
     p_shipping_mode: shippingMode,
     p_courier: courier,
     p_discount: amounts.discount,
-    p_valid_until: input.validUntil || null,
+    p_valid_until: requiredFields.values.validUntil,
     p_customer_note: String(input.customerNote || "").trim(),
     p_payment_config: {
       gcashAccountName: String(input.paymentConfig?.gcashAccountName || ""),

@@ -15,7 +15,7 @@ import {
 } from "../services/repository.js";
 import { bindForm, emptyState, modal, pageHeader } from "../components/ui.js";
 import { formatMoney } from "../components/format.js";
-import { calculatePaymentRequestTotal, COURIER_OPTIONS, displayCourier, isPaymentConfigurationComplete, PAYMENT_METHODS, SHIPPING_MODE_LABELS, SHIPPING_MODES } from "../core/paymentRequests.js";
+import { calculatePaymentRequestTotal, COURIER_OPTIONS, displayCourier, isPaymentConfigurationComplete, localDateInputValue, PAYMENT_METHODS, SHIPPING_MODE_LABELS, SHIPPING_MODES, validatePaymentRequestRequiredFields } from "../core/paymentRequests.js";
 import { createPaymentRequestPdf, downloadPaymentRequestPdf } from "../services/paymentRequestPdf.js";
 
 let editingId = null;
@@ -426,7 +426,7 @@ function paymentRequestForm(store) {
   return modal(
     "Create Payment Request",
     `
-      <form class="form-panel modal-form payment-request-form" id="payment-request-form">
+      <form class="form-panel modal-form payment-request-form" id="payment-request-form" novalidate>
         <div class="modal-header">
           <div>
             <h2>Create Payment Request</h2>
@@ -438,8 +438,8 @@ function paymentRequestForm(store) {
         <section class="modal-section payment-request-section">
           <h3>Customer</h3>
           <div class="payment-request-field-grid">
-            <label>Customer Name<input name="customerName" required /></label>
-            <label>Mobile Number<input name="customerContact" required /></label>
+            <label>Customer Name<input name="customerName" /><small class="payment-request-field-error" data-payment-request-error="customerName" hidden></small></label>
+            <label>Mobile Number<input name="customerContact" inputmode="tel" autocomplete="tel" /><small class="payment-request-field-error" data-payment-request-error="customerContact" hidden></small></label>
             <label class="full-span">Shipping Address<textarea name="shippingAddress" rows="2" placeholder="Optional"></textarea></label>
           </div>
         </section>
@@ -464,7 +464,7 @@ function paymentRequestForm(store) {
             </label>
             <label data-shipping-fee-field>Shipping Fee<input type="number" name="shippingFee" min="0" step="0.01" value="0" /></label>
             <label>Discount<input type="number" name="discount" min="0" step="0.01" value="0" /></label>
-            <label>Valid Until<input type="date" name="validUntil" /></label>
+            <label>Valid Until<input type="date" name="validUntil" min="${localDateInputValue()}" /><small class="payment-request-field-error" data-payment-request-error="validUntil" hidden></small></label>
             <label data-custom-courier-field hidden>Custom Courier<input name="customCourier" placeholder="Courier name" /></label>
             <label class="full-span">Customer-facing Note<textarea name="customerNote" rows="2" placeholder="Optional"></textarea></label>
           </div>
@@ -864,6 +864,44 @@ export function bindInventoryPage(root, store, notify, refresh) {
   }
 
   if (paymentForm) {
+    const today = localDateInputValue();
+    if (paymentForm.elements.validUntil) paymentForm.elements.validUntil.min = today;
+
+    const showPaymentRequestValidation = (validation, focusFirst = false) => {
+      let firstInvalid = null;
+      ["customerName", "customerContact", "validUntil"].forEach((name) => {
+        const field = paymentForm.elements[name];
+        const message = validation.errors[name] || "";
+        const error = paymentForm.querySelector(`[data-payment-request-error="${name}"]`);
+        if (field) field.setAttribute("aria-invalid", message ? "true" : "false");
+        if (error) {
+          error.textContent = message;
+          error.hidden = !message;
+        }
+        if (message && !firstInvalid) firstInvalid = field;
+      });
+      if (focusFirst && firstInvalid) firstInvalid.focus();
+      return !Object.keys(validation.errors).length;
+    };
+
+    const validatePaymentRequestForm = (focusFirst = false) => {
+      const validation = validatePaymentRequestRequiredFields(
+        {
+          customerName: paymentForm.elements.customerName.value,
+          customerContact: paymentForm.elements.customerContact.value,
+          validUntil: paymentForm.elements.validUntil.value,
+        },
+        today,
+      );
+      showPaymentRequestValidation(validation, focusFirst);
+      return validation;
+    };
+
+    ["customerName", "customerContact", "validUntil"].forEach((name) => {
+      paymentForm.elements[name]?.addEventListener("input", () => validatePaymentRequestForm(false));
+      paymentForm.elements[name]?.addEventListener("change", () => validatePaymentRequestForm(false));
+    });
+
     const updateSummary = () => {
       try {
         const shippingMode = paymentForm.elements.shippingMode.value;
@@ -908,6 +946,16 @@ export function bindInventoryPage(root, store, notify, refresh) {
 
     bindForm(paymentForm, async (data) => {
       try {
+        const requiredFields = validatePaymentRequestForm(true);
+        if (Object.keys(requiredFields.errors).length) return false;
+        data = {
+          ...data,
+          ...requiredFields.values,
+        };
+        paymentForm.elements.customerName.value = data.customerName;
+        paymentForm.elements.customerContact.value = data.customerContact;
+        paymentForm.elements.validUntil.value = data.validUntil;
+
         if (!isPaymentConfigurationComplete(store.paymentConfig)) {
           throw new Error("Set up GCash details and the GoTyme QR before generating a request.");
         }

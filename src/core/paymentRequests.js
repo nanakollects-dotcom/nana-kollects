@@ -30,6 +30,50 @@ export function displayCourier(value) {
   return legacy[courier] || courier;
 }
 
+export function localDateInputValue(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+export function normalizePhilippineMobile(value) {
+  const mobile = String(value || "").replace(/[\s-]+/g, "").trim();
+  if (/^09\d{9}$/.test(mobile)) return mobile;
+  if (/^\+639\d{9}$/.test(mobile)) return `0${mobile.slice(3)}`;
+  if (/^639\d{9}$/.test(mobile)) return `0${mobile.slice(2)}`;
+  return "";
+}
+
+export function validatePaymentRequestRequiredFields(input = {}, today = localDateInputValue()) {
+  const customerName = String(input.customerName || "").trim();
+  const rawMobile = String(input.customerContact || "");
+  const compactMobile = rawMobile.replace(/[\s-]+/g, "").trim();
+  const customerContact = normalizePhilippineMobile(rawMobile);
+  const validUntil = String(input.validUntil || "").trim();
+  const errors = {};
+
+  if (!customerName) errors.customerName = "Customer name is required.";
+  if (!compactMobile) {
+    errors.customerContact = "Mobile number is required.";
+  } else if (!customerContact) {
+    errors.customerContact = "Enter a valid Philippine mobile number.";
+  }
+  if (!validUntil) {
+    errors.validUntil = "Validity date is required.";
+  } else if (!/^\d{4}-\d{2}-\d{2}$/.test(validUntil) || validUntil < today) {
+    errors.validUntil = "Validity date cannot be in the past.";
+  }
+
+  return {
+    errors,
+    values: {
+      customerName,
+      customerContact,
+      validUntil,
+    },
+  };
+}
 export const DEFAULT_PAYMENT_CONFIG = {
   gcashAccountName: "Ma. Christine Albaladejo",
   gcashMobileNumber: "09615030112",

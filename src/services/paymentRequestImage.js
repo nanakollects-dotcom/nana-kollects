@@ -5,6 +5,8 @@ const IMAGE_WIDTH = 1080;
 const GOTYME_QR_ASSET = "/payment/gotyme-instapay-qr.png?v=20260713";
 const MARGIN = 72;
 const CONTENT_WIDTH = IMAGE_WIDTH - MARGIN * 2;
+const AMOUNT_RIGHT_X = IMAGE_WIDTH - MARGIN - 18;
+const SUMMARY_LABEL_RIGHT_X = AMOUNT_RIGHT_X - 170;
 const COLORS = {
   ink: "#1f2329",
   muted: "#626975",
@@ -97,8 +99,8 @@ function paymentDetail(label, value, x, y, width) {
 }
 
 function totalRow(label, value, y, strong = false) {
-  return rightText(label, IMAGE_WIDTH - MARGIN - 230, y, strong ? 28 : 23, strong ? 700 : 400, strong ? COLORS.ink : COLORS.muted)
-    + rightText(value, IMAGE_WIDTH - MARGIN, y, strong ? 34 : 26, 700, COLORS.ink);
+  return rightText(label, SUMMARY_LABEL_RIGHT_X, y, strong ? 28 : 23, strong ? 700 : 400, strong ? COLORS.ink : COLORS.muted)
+    + rightText(value, AMOUNT_RIGHT_X, y, strong ? 34 : 26, 700, COLORS.ink);
 }
 
 function paymentQrSource(source, fallback) {
@@ -220,7 +222,7 @@ export async function createPaymentRequestImage(request, config = {}) {
   svg += `<line x1="${MARGIN}" y1="${orderHeaderDividerY}" x2="${IMAGE_WIDTH - MARGIN}" y2="${orderHeaderDividerY}" stroke="${COLORS.line}" stroke-width="1.5" />`;
   svg += text("Item", MARGIN + 18, orderHeaderY + 37, 22, 700, COLORS.muted);
   svg += centerText("Qty", 650, orderHeaderY + 37, 22, 700, COLORS.muted);
-  svg += rightText("Amount", IMAGE_WIDTH - MARGIN - 18, orderHeaderY + 37, 22, 700, COLORS.muted);
+  svg += rightText("Amount", AMOUNT_RIGHT_X, orderHeaderY + 37, 22, 700, COLORS.muted);
   const itemLines = wrapText(request.itemName, 34);
   const itemLineHeight = 34;
   const itemRowTop = orderHeaderDividerY + 30;
@@ -231,31 +233,32 @@ export async function createPaymentRequestImage(request, config = {}) {
     svg += text(line, MARGIN + 18, itemTextStartY + index * itemLineHeight, 28, 700, COLORS.ink);
   });
   svg += centerText("1", 650, itemRowCenterY, 28, 400, COLORS.ink);
-  svg += rightText(money(request.itemPrice), IMAGE_WIDTH - MARGIN - 18, itemRowCenterY, 28, 700, COLORS.ink);
+  svg += rightText(money(request.itemPrice), AMOUNT_RIGHT_X, itemRowCenterY, 28, 700, COLORS.ink);
   y = itemRowTop + itemRowHeight + 22;
   svg += rule(y);
 
   y += 36;
-  svg += totalRow("Subtotal", money(request.itemPrice), y);
-  y += 36;
+  const summaryRows = [["Subtotal", money(request.itemPrice)]];
+  if (request.discount > 0) {
+    summaryRows.push(["Discount", `-${money(request.discount)}`]);
+  }
   if (request.shippingMode === SHIPPING_MODES.TO_FOLLOW) {
-    svg += totalRow("Shipping Fee", "To follow", y);
-    y += 36;
+    summaryRows.push(["Shipping Fee", "To follow"]);
   }
   if (request.shippingMode === SHIPPING_MODES.FEE_NOW && request.shippingFee > 0) {
-    svg += totalRow("Shipping Fee", money(request.shippingFee), y);
-    y += 36;
+    summaryRows.push(["Shipping Fee", money(request.shippingFee)]);
   }
-  if (request.discount > 0) {
-    svg += totalRow("Discount", `-${money(request.discount)}`, y);
+  summaryRows.forEach(([label, value]) => {
+    svg += totalRow(label, value, y);
     y += 36;
-  }
-  y += 16;
-  const totalBarY = y;
-  svg += `<line x1="${MARGIN}" y1="${totalBarY - 22}" x2="${IMAGE_WIDTH - MARGIN}" y2="${totalBarY - 22}" stroke="${COLORS.line}" stroke-width="1.5" />`;
-  svg += text(request.shippingMode === SHIPPING_MODES.TO_FOLLOW ? "Amount Due Now" : "Total Amount Due", MARGIN, totalBarY + 14, 31, 800, COLORS.ink);
-  svg += rightText(money(request.totalAmount), IMAGE_WIDTH - MARGIN, totalBarY + 16, 40, 800, COLORS.ink);
-  y += 54;
+  });
+  const totalTopY = y + 16;
+  const totalRowHeight = 54;
+  const totalBottomY = totalTopY + totalRowHeight;
+  svg += `<line x1="${MARGIN}" y1="${totalTopY}" x2="${IMAGE_WIDTH - MARGIN}" y2="${totalTopY}" stroke="${COLORS.line}" stroke-width="1.5" />`;
+  svg += text(request.shippingMode === SHIPPING_MODES.TO_FOLLOW ? "Amount Due Now" : "Total Amount Due", MARGIN, totalTopY + totalRowHeight / 2 + 10, 31, 800, COLORS.ink);
+  svg += rightText(money(request.totalAmount), AMOUNT_RIGHT_X, totalTopY + totalRowHeight / 2 + 12, 40, 800, COLORS.ink);
+  y = totalBottomY;
   svg += rule(y);
 
   y += 48;

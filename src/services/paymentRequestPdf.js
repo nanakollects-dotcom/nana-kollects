@@ -49,6 +49,8 @@ export async function createPaymentRequestPdf(request, config) {
   const bold = await document.embedFont(StandardFonts.HelveticaBold);
   const margin = 42;
   const contentWidth = PAGE.width - margin * 2;
+  const amountRightX = PAGE.width - margin - 10;
+  const summaryLabelRightX = amountRightX - 145;
   let y = PAGE.height - 42;
 
   const drawText = (value, x, drawY, size = 9, font = regular, color = colors.ink, options = {}) => {
@@ -75,8 +77,8 @@ export async function createPaymentRequestPdf(request, config) {
     return drawY - (17 + lines.length * 12);
   };
   const totalRow = (label, value, drawY) => {
-    drawText(label, PAGE.width - margin - 190, drawY, 8.5, regular, colors.muted);
-    drawRight(value, PAGE.width - margin, drawY, 9.5, bold, colors.ink);
+    drawRight(label, summaryLabelRightX, drawY, 8.5, regular, colors.muted);
+    drawRight(value, amountRightX, drawY, 9.5, bold, colors.ink);
   };
   const drawCentered = (value, centerX, drawY, size = 9, font = regular, color = colors.ink) => {
     const label = cleanText(value);
@@ -152,7 +154,7 @@ export async function createPaymentRequestPdf(request, config) {
   });
   drawText("Item", margin + 10, tableTop - 13, 7.7, bold, colors.muted);
   drawCentered("Qty", margin + 314, tableTop - 13, 7.7, bold, colors.muted);
-  drawRight("Amount", PAGE.width - margin - 10, tableTop - 13, 7.7, bold, colors.muted);
+  drawRight("Amount", amountRightX, tableTop - 13, 7.7, bold, colors.muted);
   const itemRowTop = tableTop - 43;
   const itemLines = wrapLinesByWidth(request.itemName, 270, 9.5, bold);
   const itemLineHeight = 12;
@@ -160,30 +162,41 @@ export async function createPaymentRequestPdf(request, config) {
     drawText(line, margin + 10, itemRowTop - index * itemLineHeight, 9.5, bold, colors.ink);
   });
   drawCentered("1", margin + 314, itemRowTop, 9.5, regular, colors.ink);
-  drawRight(pdfMoney(request.itemPrice), PAGE.width - margin - 10, itemRowTop, 9.5, bold, colors.ink);
+  drawRight(pdfMoney(request.itemPrice), amountRightX, itemRowTop, 9.5, bold, colors.ink);
   y = itemRowTop - Math.max(18, itemLines.length * itemLineHeight) - 18;
 
   y -= 10;
-  const totalStart = y;
-  totalRow("Subtotal", pdfMoney(request.itemPrice), totalStart);
-  let totalsY = totalStart - 15;
+  const summaryRows = [["Subtotal", pdfMoney(request.itemPrice)]];
+  if (request.discount > 0) {
+    summaryRows.push(["Discount", `-${pdfMoney(request.discount)}`]);
+  }
   if (request.shippingMode === SHIPPING_MODES.TO_FOLLOW) {
-    totalRow("Shipping Fee", "To follow", totalsY);
-    totalsY -= 15;
+    summaryRows.push(["Shipping Fee", "To follow"]);
   }
   if (request.shippingMode === SHIPPING_MODES.FEE_NOW && request.shippingFee > 0) {
-    totalRow("Shipping Fee", pdfMoney(request.shippingFee), totalsY);
-    totalsY -= 15;
+    summaryRows.push(["Shipping Fee", pdfMoney(request.shippingFee)]);
   }
-
-  if (request.discount > 0) {
-    totalRow("Discount", `-${pdfMoney(request.discount)}`, totalsY);
-    totalsY -= 15;
-  }
-  const totalBarY = totalsY - 24;
-  drawText(request.shippingMode === SHIPPING_MODES.TO_FOLLOW ? "Amount Due Now" : "Total Amount Due", margin, totalBarY + 8, 11.2, bold, colors.ink);
-  drawRight(pdfMoney(request.totalAmount), PAGE.width - margin, totalBarY + 6, 15, bold, colors.ink);
-  y = totalBarY - 12;
+  const summaryStartY = y;
+  summaryRows.forEach(([label, value], index) => {
+    totalRow(label, value, summaryStartY - index * 15);
+  });
+  const summaryBottomY = summaryStartY - (summaryRows.length - 1) * 15;
+  const totalTopY = summaryBottomY - 24;
+  page.drawLine({
+    start: { x: margin, y: totalTopY },
+    end: { x: PAGE.width - margin, y: totalTopY },
+    thickness: 0.6,
+    color: colors.line,
+  });
+  const totalRowHeight = 34;
+  const totalBottomY = totalTopY - totalRowHeight;
+  const totalLabelSize = 11.2;
+  const totalAmountSize = 15;
+  const totalLabelY = totalBottomY + (totalRowHeight - totalLabelSize) / 2 + 1;
+  const totalAmountY = totalBottomY + (totalRowHeight - totalAmountSize) / 2 + 1;
+  drawText(request.shippingMode === SHIPPING_MODES.TO_FOLLOW ? "Amount Due Now" : "Total Amount Due", margin, totalLabelY, totalLabelSize, bold, colors.ink);
+  drawRight(pdfMoney(request.totalAmount), amountRightX, totalAmountY, totalAmountSize, bold, colors.ink);
+  y = totalBottomY;
   page.drawLine({
     start: { x: margin, y },
     end: { x: PAGE.width - margin, y },

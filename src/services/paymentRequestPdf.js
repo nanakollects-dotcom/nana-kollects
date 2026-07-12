@@ -94,6 +94,22 @@ export async function createPaymentRequestPdf(request, config) {
     if (line) lines.push(line);
     return lines;
   };
+  const wrapLinesByWidth = (value, maxWidth, size, font = regular) => {
+    const words = cleanText(value).split(" ").filter(Boolean);
+    const lines = [];
+    let line = "";
+    words.forEach((word) => {
+      const next = line ? `${line} ${word}` : word;
+      if (line && font.widthOfTextAtSize(next, size) > maxWidth) {
+        lines.push(line);
+        line = word;
+      } else {
+        line = next;
+      }
+    });
+    if (line) lines.push(line);
+    return lines;
+  };
 
   drawText("Nana Kollects", margin, y, 22, bold);
   drawText("Hot Picks. Limited Pieces.", margin, y - 15, 8, regular, colors.muted);
@@ -107,20 +123,8 @@ export async function createPaymentRequestPdf(request, config) {
   const columnWidth = (contentWidth - columnGap) / 2;
   sectionTitle("Customer", margin, y);
   sectionTitle("Request Details", margin + columnWidth + columnGap, y);
-  page.drawLine({
-    start: { x: margin, y: y - 7 },
-    end: { x: margin + columnWidth, y: y - 7 },
-    thickness: 0.5,
-    color: colors.line,
-  });
-  page.drawLine({
-    start: { x: margin + columnWidth + columnGap, y: y - 7 },
-    end: { x: margin + contentWidth, y: y - 7 },
-    thickness: 0.5,
-    color: colors.line,
-  });
-  let leftY = y - 20;
-  let rightY = y - 20;
+  let leftY = y - 24;
+  let rightY = y - 24;
   leftY = detail("Customer Name", request.customerName, margin, leftY, columnWidth);
   if (request.customerContact) leftY = detail("Mobile Number", request.customerContact, margin, leftY, columnWidth);
   if (request.shippingAddress) leftY = detail("Shipping Address", request.shippingAddress, margin, leftY, columnWidth);
@@ -146,7 +150,7 @@ export async function createPaymentRequestPdf(request, config) {
   drawCentered("Qty", margin + 314, tableTop - 13, 7.7, bold, colors.muted);
   drawRight("Amount", PAGE.width - margin - 10, tableTop - 13, 7.7, bold, colors.muted);
   const itemRowTop = tableTop - 43;
-  const itemLines = wrapLines(request.itemName, 56);
+  const itemLines = wrapLinesByWidth(request.itemName, 270, 9.5, bold);
   const itemLineHeight = 12;
   itemLines.forEach((line, index) => {
     drawText(line, margin + 10, itemRowTop - index * itemLineHeight, 9.5, bold, colors.ink);
@@ -179,9 +183,21 @@ export async function createPaymentRequestPdf(request, config) {
     totalsY -= 15;
   }
   const totalBarY = totalsY - 18;
+  page.drawLine({
+    start: { x: margin, y: totalBarY + 24 },
+    end: { x: PAGE.width - margin, y: totalBarY + 24 },
+    thickness: 0.6,
+    color: colors.line,
+  });
   drawText(request.shippingMode === SHIPPING_MODES.TO_FOLLOW ? "Amount Due Now" : "Total Amount Due", margin, totalBarY + 8, 11.2, bold, colors.ink);
   drawRight(pdfMoney(request.totalAmount), PAGE.width - margin, totalBarY + 6, 15, bold, colors.ink);
   y = totalBarY - 12;
+  page.drawLine({
+    start: { x: margin, y },
+    end: { x: PAGE.width - margin, y },
+    thickness: 0.6,
+    color: colors.line,
+  });
 
   y -= 16;
   sectionTitle("Payment Options", margin, y);
@@ -241,11 +257,13 @@ export async function createPaymentRequestPdf(request, config) {
   }
 
   y = optionTop - optionHeight - 12;
-  const reminderLines = wrapLines("Unpaid reservations without cancellation notice may be released, declined for future orders, and may be included in Nana Kollects' buyer advisory posts in accordance with our shop policies. By paying, you acknowledge that you have read our FAQs and shop policies posted in our pinned posts and highlights.", 108);
+  const reminderPaddingX = 12;
   const reminderPaddingTop = 18;
   const reminderTitleGap = 16;
   const reminderLineHeight = 10.5;
   const reminderPaddingBottom = 18;
+  const reminderTextWidth = contentWidth - reminderPaddingX * 2;
+  const reminderLines = wrapLinesByWidth("Unpaid reservations without cancellation notice may be released, declined for future orders, and may be included in Nana Kollects' buyer advisory posts in accordance with our shop policies. By paying, you acknowledge that you have read our FAQs and shop policies posted in our pinned posts and highlights.", reminderTextWidth, 7.5, regular);
   const reminderHeight = reminderPaddingTop + 8 + reminderTitleGap + (reminderLines.length * reminderLineHeight) + reminderPaddingBottom;
   page.drawRectangle({
     x: margin,
@@ -256,10 +274,10 @@ export async function createPaymentRequestPdf(request, config) {
     borderColor: colors.line,
     borderWidth: 0.7,
   });
-  drawText("PAYMENT REMINDERS", margin + 12, y - reminderPaddingTop, 8, bold, colors.muted);
+  drawText("PAYMENT REMINDERS", margin + reminderPaddingX, y - reminderPaddingTop, 8, bold, colors.muted);
   let reminderY = y - reminderPaddingTop - reminderTitleGap - 5;
   reminderLines.forEach((line) => {
-    drawText(line, margin + 12, reminderY, 7.5, regular, colors.muted);
+    drawText(line, margin + reminderPaddingX, reminderY, 7.5, regular, colors.muted);
     reminderY -= reminderLineHeight;
   });
   y -= reminderHeight + 14;
@@ -279,7 +297,7 @@ export async function createPaymentRequestPdf(request, config) {
     thickness: 0.7,
     color: colors.line,
   });
-  drawCentered("Thank you for taking a little piece of Nana Kollects home with you.", PAGE.width / 2, 35, 8.5, regular, colors.muted);
+  drawCentered("We hope you love your piece. Thank you for shopping with Nana Kollects!", PAGE.width / 2, 35, 8.5, regular, colors.muted);
 
   return document.save();
 }

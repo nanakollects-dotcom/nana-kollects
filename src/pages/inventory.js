@@ -17,7 +17,7 @@ import { bindForm, emptyState, modal, pageHeader } from "../components/ui.js";
 import { formatMoney } from "../components/format.js";
 import { calculatePaymentRequestTotal, COURIER_OPTIONS, displayCourier, isPaymentConfigurationComplete, localDateInputValue, PAYMENT_METHODS, SHIPPING_MODE_LABELS, SHIPPING_MODES, validatePaymentRequestRequiredFields } from "../core/paymentRequests.js";
 import { createPaymentRequestPdf, downloadPaymentRequestPdf } from "../services/paymentRequestPdf.js";
-import { createPaymentRequestImage, downloadPaymentRequestImage } from "../services/paymentRequestImage.js";
+import { createPaymentRequestImage, sharePaymentRequestImage } from "../services/paymentRequestImage.js";
 
 let editingId = null;
 let isModalOpen = false;
@@ -336,7 +336,7 @@ function inventoryForm(store) {
                     <div><span>Request No</span><strong>${escapeText(pendingRequest.requestNumber)}</strong></div>
                   </div>
                   <div class="request-actions">
-                    <button class="table-action primary-action" type="button" data-download-image-request="${pendingRequest.id}">Save as Image</button>
+                    <button class="table-action primary-action" type="button" data-download-image-request="${pendingRequest.id}">Share / Save Image</button>
                     <button class="table-action" type="button" data-download-request="${pendingRequest.id}">Download PDF</button>
                     <button class="table-action primary-action" type="button" data-paid-request="${pendingRequest.id}">Mark Paid</button>
                     <button class="table-action danger" type="button" data-cancel-request="${pendingRequest.id}">Cancel Payment Request</button>
@@ -564,7 +564,7 @@ function renderPaymentRequests(store) {
       <td class="money-cell">${formatMoney(request.totalAmount)}</td>
       <td><span class="pill ${requestStatusClass(request.status)}">${request.status}</span></td>
       <td class="actions-cell request-actions">
-        <button class="table-action primary-action" type="button" data-download-image-request="${request.id}">Save as Image</button>
+        <button class="table-action primary-action" type="button" data-download-image-request="${request.id}">Share / Save Image</button>
         <button class="table-action" type="button" data-download-request="${request.id}">Download PDF</button>
         ${request.status === "Pending" ? `
           <button class="table-action primary-action" type="button" data-paid-request="${request.id}">Mark Paid</button>
@@ -969,14 +969,26 @@ export function bindInventoryPage(root, store, notify, refresh) {
           paymentConfig: store.paymentConfig,
           ...amounts,
         });
-        const blob = await createPaymentRequestImage(result.request, {
-          ...result.request.paymentConfig,
-          gotymeQrImage: result.store.paymentConfig.gotymeQrImage,
-        });
-        downloadPaymentRequestImage(blob, result.request.requestNumber);
         paymentRequestItemId = null;
-        notify(`${result.request.requestNumber} created. Item reserved.`);
         refresh();
+        try {
+          const blob = await createPaymentRequestImage(result.request, {
+            ...result.request.paymentConfig,
+            gotymeQrImage: result.store.paymentConfig.gotymeQrImage,
+          });
+          const imageResult = await sharePaymentRequestImage(blob, result.request.requestNumber, {
+            fallbackOnNotAllowed: false,
+          });
+          if (imageResult === "blocked") {
+            notify("Payment Request created. Tap \"Share / Save Image\" to save or share it.");
+          } else if (imageResult === "opened" || imageResult === "mobile-download") {
+            notify("Payment Request created. Image created. Use your browser's Share or Save Image option.");
+          } else {
+            notify(`${result.request.requestNumber} created. Item reserved.`);
+          }
+        } catch (imageError) {
+          notify(`${result.request.requestNumber} created, but the image could not be prepared: ${imageError.message}`, true);
+        }
       } catch (error) {
         notify(error.message, true);
         return false;
@@ -1112,8 +1124,12 @@ export function bindInventoryPage(root, store, notify, refresh) {
           ...request.paymentConfig,
           gotymeQrImage: store.paymentConfig.gotymeQrImage,
         });
-        downloadPaymentRequestImage(blob, request.requestNumber);
-        notify("Payment Request image saved.");
+        const imageResult = await sharePaymentRequestImage(blob, request.requestNumber);
+        if (imageResult === "opened" || imageResult === "mobile-download") {
+          notify("Image created. Use your browser's Share or Save Image option.");
+        } else if (imageResult !== "cancelled") {
+          notify("Payment Request image ready.");
+        }
       }
 
       if (button.dataset.paidRequest) {

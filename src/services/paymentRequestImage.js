@@ -21,6 +21,7 @@ const xmlText = (value) => cleanText(value)
   .replace(/"/g, "&quot;");
 const money = (value) => formatMoney(value).replace(/[^0-9.,-]+/g, "PHP ").trim();
 const safeNumber = (requestNumber) => String(requestNumber || "Payment-Request").replace(/[^A-Za-z0-9-]/g, "-");
+const imageFilename = (requestNumber) => `Nana-Kollects-Payment-Request-${safeNumber(requestNumber)}.png`;
 
 function dateLabel(value) {
   if (!value) return "";
@@ -292,17 +293,52 @@ export async function createPaymentRequestImage(request, config = {}) {
   return svgToPngBlob(svgDocument, [gcashQrPlacement, gotymeQrPlacement]);
 }
 
-export function downloadPaymentRequestImage(blob, requestNumber) {
+function downloadOrOpenPaymentRequestImage(blob, requestNumber) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `Nana-Kollects-Payment-Request-${safeNumber(requestNumber)}.png`;
+  link.download = imageFilename(requestNumber);
   document.body.appendChild(link);
   if ("download" in HTMLAnchorElement.prototype) {
     link.click();
-  } else {
-    window.open(url, "_blank", "noopener");
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 30000);
+    return "downloaded";
   }
+  window.open(url, "_blank", "noopener");
   link.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 30000);
+  return "opened";
+}
+
+function paymentRequestImageFile(blob, requestNumber) {
+  return new File([blob], imageFilename(requestNumber), { type: "image/png" });
+}
+
+function isLikelyMobileBrowser() {
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
+}
+
+export async function sharePaymentRequestImage(blob, requestNumber, options = {}) {
+  const file = paymentRequestImageFile(blob, requestNumber);
+  const canShareFile = Boolean(navigator.share && navigator.canShare?.({ files: [file] }));
+  if (canShareFile) {
+    try {
+      await navigator.share({
+        files: [file],
+        title: "Nana Kollects Payment Request",
+      });
+      return "shared";
+    } catch (error) {
+      if (error?.name === "AbortError") return "cancelled";
+      if (error?.name !== "NotAllowedError") throw error;
+      if (options.fallbackOnNotAllowed === false) return "blocked";
+    }
+  }
+  const fallbackResult = downloadOrOpenPaymentRequestImage(blob, requestNumber);
+  return fallbackResult === "downloaded" && isLikelyMobileBrowser() ? "mobile-download" : fallbackResult;
+}
+
+export function downloadPaymentRequestImage(blob, requestNumber) {
+  return downloadOrOpenPaymentRequestImage(blob, requestNumber);
 }

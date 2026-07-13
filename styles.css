@@ -432,6 +432,10 @@ button:disabled {
   display: none;
 }
 
+.main[data-page="orders"] .topbar {
+  display: none;
+}
+
 .filter-control {
   flex: 1 1 100%;
   width: 100%;
@@ -934,6 +938,84 @@ button:disabled {
 
 .metric-card.focus {
   border-color: rgba(var(--primary-rgb), 0.24);
+}
+
+.order-metric-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.order-metric {
+  min-height: 78px;
+  padding: 14px;
+}
+
+.order-metric[aria-pressed="true"] {
+  background: var(--primary-soft);
+}
+
+.orders-toolbar {
+  margin-top: 2px;
+}
+
+.orders-results,
+.orders-system-state {
+  min-height: 180px;
+}
+
+.orders-table {
+  min-width: 900px;
+}
+
+.orders-table th:nth-child(2),
+.orders-table td:nth-child(2) {
+  min-width: 180px;
+}
+
+.orders-table td:nth-child(n + 3) {
+  white-space: normal;
+}
+
+.order-progress {
+  width: min(150px, 100%);
+  display: grid;
+  gap: 5px;
+}
+
+.order-progress > span {
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-muted);
+}
+
+.order-progress i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary);
+}
+
+.order-progress small {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.order-card > .pill {
+  justify-self: start;
+}
+
+.order-waiting {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.order-card .order-progress {
+  width: 100%;
+}
+
+.order-next-action {
+  min-width: 140px;
 }
 
 .cash-hero strong {
@@ -2911,5 +2993,21 @@ td:nth-child(n + 3) {
 
   .desktop-table {
     display: block;
+  }
+}
+
+@media (min-width: 640px) {
+  .order-metric-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 900px) {
+  .order-metric-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  .orders-toolbar {
+    grid-template-columns: minmax(280px, 1fr) repeat(3, minmax(150px, 180px));
   }
 }

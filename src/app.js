@@ -13,6 +13,7 @@ import {
 } from "./pages/inventory.js";
 import { renderCapitalPage, bindCapitalPage } from "./pages/capital.js";
 import { renderSalesPage, bindSalesPage } from "./pages/sales.js";
+import { renderOrdersPage, bindOrdersPage } from "./pages/orders.js";
 import { renderCollectionsPage, bindCollectionsPage } from "./pages/collections.js";
 import { renderExpensesPage, bindExpensesPage } from "./pages/expenses.js";
 
@@ -21,6 +22,7 @@ const pages = [
   { id: "collections", label: "Collections", icon: "collections", render: renderCollectionsPage, bind: bindCollectionsPage },
   { id: "inventory", label: "Inventory", icon: "inventory", render: renderInventoryPage, bind: bindInventoryPage },
   { id: "sales", label: "Sales", icon: "sales", render: renderSalesPage, bind: bindSalesPage },
+  { id: "orders", label: "Orders", icon: "orders", render: renderOrdersPage, bind: bindOrdersPage },
   { id: "expenses", label: "Expenses", icon: "expenses", render: renderExpensesPage, bind: bindExpensesPage },
   { id: "capital", label: "Capital", icon: "capital", render: renderCapitalPage, bind: bindCapitalPage },
 ];
@@ -94,6 +96,7 @@ function navIcon(name) {
     collections: `<path d="M12 3 4 7l8 4 8-4-8-4z"/><path d="M4 12l8 4 8-4"/><path d="M4 17l8 4 8-4"/>`,
     inventory: `<path d="M5 7h14v13H5z"/><path d="M8 7V5h8v2"/><path d="M9 11h6"/>`,
     sales: `<text x="12" y="18" text-anchor="middle" font-size="20" font-weight="500" fill="none" stroke="currentColor" stroke-width="1.4">₱</text>`,
+    orders: `<path d="M7 4h10l2 4v12H5V8z"/><path d="M5 8h14M9 12h6M9 16h4"/>`,
     expenses: `<path d="M7 4h10v16H7z"/><path d="M9 8h6M9 12h6M9 16h3"/>`,
     capital: `<path d="M4 8h16v10H4z"/><path d="M7 8V6h10v2"/><circle cx="12" cy="13" r="2"/>`,
   };

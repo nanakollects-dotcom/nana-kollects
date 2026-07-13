@@ -14,6 +14,14 @@ export const ORDER_STATUS_LABELS = {
   [ORDER_STATUSES.COMPLETED]: "Completed",
 };
 
+export const ORDER_STATUS_CLASSES = {
+  [ORDER_STATUSES.READY_TO_PACK]: "yellow-pill",
+  [ORDER_STATUSES.PACKING]: "info-pill",
+  [ORDER_STATUSES.PACKED]: "green-pill",
+  [ORDER_STATUSES.SHIPPED]: "gray-pill",
+  [ORDER_STATUSES.COMPLETED]: "muted-pill",
+};
+
 export const ORDER_SOURCE_TYPES = {
   PAYMENT_REQUEST: "payment_request",
 };
@@ -22,6 +30,25 @@ export const FULFILLMENT_METHODS = {
   SHIPMENT: "shipment",
   LOCAL_DELIVERY: "local_delivery",
   PICKUP: "pickup",
+};
+
+export const FULFILLMENT_METHOD_LABELS = {
+  [FULFILLMENT_METHODS.SHIPMENT]: "Shipment",
+  [FULFILLMENT_METHODS.LOCAL_DELIVERY]: "Local Delivery",
+  [FULFILLMENT_METHODS.PICKUP]: "Pickup",
+};
+
+export const ORDER_QUEUE_FILTERS = {
+  ALL: "all",
+  NEEDS_ACTION: "needs_action",
+};
+
+export const ORDER_SORTS = {
+  PRIORITY: "priority",
+  OLDEST: "oldest",
+  NEWEST: "newest",
+  CUSTOMER: "customer",
+  STATUS: "status",
 };
 
 export const ORDER_CURRENCY = "PHP";
@@ -71,6 +98,140 @@ export function getOrderChecklistProgress(items = []) {
     complete: total > 0 && checked === total,
     percent: total ? Math.round((checked / total) * 100) : 0,
   };
+}
+
+const NEEDS_ACTION_STATUSES = [
+  ORDER_STATUSES.READY_TO_PACK,
+  ORDER_STATUSES.PACKING,
+  ORDER_STATUSES.PACKED,
+];
+
+const STATUS_PRIORITY = {
+  [ORDER_STATUSES.READY_TO_PACK]: 0,
+  [ORDER_STATUSES.PACKING]: 1,
+  [ORDER_STATUSES.PACKED]: 2,
+  [ORDER_STATUSES.SHIPPED]: 3,
+  [ORDER_STATUSES.COMPLETED]: 4,
+};
+
+function timestamp(value) {
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function isSameLocalDay(value, comparison = new Date()) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  return date.getFullYear() === comparison.getFullYear()
+    && date.getMonth() === comparison.getMonth()
+    && date.getDate() === comparison.getDate();
+}
+
+export function orderNeedsAction(order = {}) {
+  return NEEDS_ACTION_STATUSES.includes(order.fulfillmentStatus);
+}
+
+export function getOrderStatusLabel(status) {
+  return ORDER_STATUS_LABELS[status] || "Unknown";
+}
+
+export function getOrderStatusClass(status) {
+  return ORDER_STATUS_CLASSES[status] || "gray-pill";
+}
+
+export function getFulfillmentMethodLabel(method) {
+  return FULFILLMENT_METHOD_LABELS[method] || "Unknown";
+}
+
+export function getOrderNextActionLabel(order = {}) {
+  if (order.fulfillmentStatus === ORDER_STATUSES.READY_TO_PACK) return "Start Packing";
+  if (order.fulfillmentStatus === ORDER_STATUSES.PACKING) return "Continue Packing";
+  if (order.fulfillmentStatus === ORDER_STATUSES.PACKED) {
+    return order.fulfillmentMethod === FULFILLMENT_METHODS.PICKUP ? "Complete Handoff" : "Mark as Shipped";
+  }
+  if (order.fulfillmentStatus === ORDER_STATUSES.SHIPPED) return "Mark Completed";
+  return "View Order";
+}
+
+export function formatOrderWaitingTime(createdAt, now = new Date()) {
+  const elapsed = Math.max(now.getTime() - timestamp(createdAt), 0);
+  const hours = Math.floor(elapsed / (60 * 60 * 1000));
+  if (hours < 1) return "<1h";
+  if (hours < 24) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
+}
+
+export function getOrderItemCount(items = []) {
+  return items.reduce((total, item) => total + Math.max(Number(item.quantity) || 1, 1), 0);
+}
+
+export function getOrderQueueMetrics(orders = [], now = new Date()) {
+  return {
+    readyToPack: orders.filter((order) => order.fulfillmentStatus === ORDER_STATUSES.READY_TO_PACK).length,
+    packing: orders.filter((order) => order.fulfillmentStatus === ORDER_STATUSES.PACKING).length,
+    packed: orders.filter((order) => order.fulfillmentStatus === ORDER_STATUSES.PACKED).length,
+    shippedToday: orders.filter((order) => isSameLocalDay(order.shippedAt, now)).length,
+    completedToday: orders.filter((order) => isSameLocalDay(order.completedAt, now)).length,
+  };
+}
+
+export function filterOrders(orders = [], orderItems = [], options = {}) {
+  const search = String(options.search || "").trim().toLowerCase();
+  const status = options.status || ORDER_QUEUE_FILTERS.NEEDS_ACTION;
+  const method = options.method || ORDER_QUEUE_FILTERS.ALL;
+  const itemTextByOrder = new Map();
+
+  for (const item of orderItems) {
+    const current = itemTextByOrder.get(item.orderId) || "";
+    itemTextByOrder.set(item.orderId, `${current} ${item.itemName || ""} ${item.sku || ""}`.toLowerCase());
+  }
+
+  return orders.filter((order) => {
+    const searchable = [
+      order.orderNumber,
+      order.customerName,
+      order.customerContact,
+      order.courier,
+      order.trackingNumber,
+      itemTextByOrder.get(order.id),
+    ].join(" ").toLowerCase();
+    const createdAt = timestamp(order.createdAt);
+    const matchesPeriod = (!options.startDate || createdAt >= timestamp(options.startDate))
+      && (!options.endDate || createdAt <= timestamp(options.endDate));
+    const matchesStatus = status === ORDER_QUEUE_FILTERS.ALL
+      || (status === ORDER_QUEUE_FILTERS.NEEDS_ACTION ? orderNeedsAction(order) : order.fulfillmentStatus === status);
+    const matchesMethod = method === ORDER_QUEUE_FILTERS.ALL || order.fulfillmentMethod === method;
+    const matchesMetric = options.metricFilter === "shipped_today"
+      ? isSameLocalDay(order.shippedAt, options.now || new Date())
+      : options.metricFilter === "completed_today"
+        ? isSameLocalDay(order.completedAt, options.now || new Date())
+        : true;
+
+    return (!search || searchable.includes(search)) && matchesStatus && matchesMethod && matchesPeriod && matchesMetric;
+  });
+}
+
+export function sortOrders(orders = [], sort = ORDER_SORTS.PRIORITY) {
+  const byCreated = (a, b) => timestamp(a.createdAt) - timestamp(b.createdAt);
+  const byNewest = (a, b) => timestamp(b.createdAt) - timestamp(a.createdAt);
+  const copy = orders.slice();
+
+  if (sort === ORDER_SORTS.OLDEST) return copy.sort(byCreated);
+  if (sort === ORDER_SORTS.NEWEST) return copy.sort(byNewest);
+  if (sort === ORDER_SORTS.CUSTOMER) {
+    return copy.sort((a, b) => String(a.customerName || "").localeCompare(String(b.customerName || ""), undefined, { sensitivity: "base" }) || byCreated(a, b));
+  }
+  if (sort === ORDER_SORTS.STATUS) {
+    return copy.sort((a, b) => (STATUS_PRIORITY[a.fulfillmentStatus] ?? 99) - (STATUS_PRIORITY[b.fulfillmentStatus] ?? 99) || byCreated(a, b));
+  }
+
+  return copy.sort((a, b) => {
+    const aNeedsAction = orderNeedsAction(a);
+    const bNeedsAction = orderNeedsAction(b);
+    if (aNeedsAction !== bNeedsAction) return aNeedsAction ? -1 : 1;
+    if (aNeedsAction) return (STATUS_PRIORITY[a.fulfillmentStatus] ?? 99) - (STATUS_PRIORITY[b.fulfillmentStatus] ?? 99) || byCreated(a, b);
+    return byNewest(a, b);
+  });
 }
 
 export function validateOrderShipping(order = {}, input = {}) {

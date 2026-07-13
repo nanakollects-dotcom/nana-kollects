@@ -7,6 +7,7 @@ import {
   getOrderChecklistProgress,
   getOrderItemCount,
   getOrderNextActionLabel,
+  getOrderProgressLabel,
   getOrderQueueMetrics,
   getOrderStatusClass,
   getOrderStatusLabel,
@@ -33,6 +34,7 @@ function escapeText(value) {
 }
 
 function formatCreatedAt(value) {
+  if (value === null || value === undefined || String(value).trim() === "") return "Date unavailable";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Date unavailable";
   return new Intl.DateTimeFormat("en-PH", {
@@ -44,18 +46,29 @@ function formatCreatedAt(value) {
   }).format(date);
 }
 
+function displayText(value, fallback) {
+  const text = String(value ?? "").trim();
+  return text || fallback;
+}
+
+function formatItemCount(count) {
+  if (count === null) return "Item count unavailable";
+  return `${count} ${count === 1 ? "item" : "items"}`;
+}
+
 function itemsForOrder(store, orderId) {
-  return (store.orderItems || []).filter((item) => item.orderId === orderId);
+  if (!orderId || !Array.isArray(store.orderItems)) return [];
+  return store.orderItems.filter((item) => item.orderId === orderId);
 }
 
 function itemPreview(items) {
-  const names = items.map((item) => item.itemName).filter(Boolean);
+  const names = items.map((item) => String(item.itemName || "").trim()).filter(Boolean);
   if (!names.length) return "Item details unavailable";
   return `${names.slice(0, 2).join(", ")}${names.length > 2 ? ` +${names.length - 2} more` : ""}`;
 }
 
 function renderProgress(progress) {
-  const label = progress.total ? `${progress.checked} of ${progress.total} packed` : "No packing items";
+  const label = getOrderProgressLabel(progress);
   return `
     <div class="order-progress" aria-label="${escapeText(label)}">
       <span><i style="width: ${progress.percent}%"></i></span>
@@ -66,7 +79,7 @@ function renderProgress(progress) {
 
 function renderAction(order) {
   const label = getOrderNextActionLabel(order);
-  return `<button class="table-action primary-action order-next-action" type="button" data-order-action="${escapeText(order.id)}">${escapeText(label)}</button>`;
+  return `<button class="table-action primary-action order-next-action" type="button" data-order-action="${escapeText(order.id || "unknown-order")}" aria-label="${escapeText(`${label} for ${displayText(order.orderNumber, "order with unavailable reference")}`)}">${escapeText(label)}</button>`;
 }
 
 function emptyOrdersState(allOrders, visibleOrders) {
@@ -96,11 +109,12 @@ function renderOrderResults(store) {
     const items = itemsForOrder(store, order.id);
     const progress = getOrderChecklistProgress(items);
     const itemCount = getOrderItemCount(items);
+    const orderReference = displayText(order.orderNumber, "Order reference unavailable");
     return `
       <tr>
-        <td><strong class="mono">${escapeText(order.orderNumber)}</strong><span>${escapeText(formatCreatedAt(order.createdAt))}</span></td>
-        <td><strong>${escapeText(order.customerName || "Customer unavailable")}</strong><span>${escapeText(order.customerContact || "No contact number")}</span></td>
-        <td><strong>${itemCount} ${itemCount === 1 ? "item" : "items"}</strong><span>${escapeText(itemPreview(items))}</span></td>
+        <td><strong class="mono">${escapeText(orderReference)}</strong><span>${escapeText(formatCreatedAt(order.createdAt))}</span></td>
+        <td><strong>${escapeText(displayText(order.customerName, "Customer unavailable"))}</strong><span>${escapeText(displayText(order.customerContact, "No contact number"))}</span></td>
+        <td><strong>${escapeText(formatItemCount(itemCount))}</strong><span>${escapeText(itemPreview(items))}</span></td>
         <td>${escapeText(getFulfillmentMethodLabel(order.fulfillmentMethod))}</td>
         <td>${renderProgress(progress)}</td>
         <td><span class="pill ${getOrderStatusClass(order.fulfillmentStatus)}">${escapeText(getOrderStatusLabel(order.fulfillmentStatus))}</span></td>
@@ -114,18 +128,19 @@ function renderOrderResults(store) {
     const items = itemsForOrder(store, order.id);
     const progress = getOrderChecklistProgress(items);
     const itemCount = getOrderItemCount(items);
+    const orderReference = displayText(order.orderNumber, "Order reference unavailable");
     return `
       <article class="record-card order-card">
         <div class="record-card-head">
           <div>
-            <strong class="mono">${escapeText(order.orderNumber)}</strong>
-            <span>${escapeText(order.customerName || "Customer unavailable")}</span>
+            <strong class="mono">${escapeText(orderReference)}</strong>
+            <span>${escapeText(displayText(order.customerName, "Customer unavailable"))}</span>
           </div>
           <strong class="order-waiting">${escapeText(formatOrderWaitingTime(order.createdAt))}</strong>
         </div>
         <span class="pill ${getOrderStatusClass(order.fulfillmentStatus)}">${escapeText(getOrderStatusLabel(order.fulfillmentStatus))}</span>
         <div class="record-grid">
-          <div><span>Items</span><strong>${itemCount} ${itemCount === 1 ? "item" : "items"}</strong></div>
+          <div><span>Items</span><strong>${escapeText(formatItemCount(itemCount))}</strong></div>
           <div><span>Method</span><strong>${escapeText(getFulfillmentMethodLabel(order.fulfillmentMethod))}</strong></div>
         </div>
         ${renderProgress(progress)}
@@ -152,7 +167,7 @@ function renderOrderResults(store) {
 function metricCard(label, value, status, metric = "") {
   const active = statusFilter === status && metricFilter === metric;
   return `
-    <button class="metric-card metric-nav order-metric ${active ? "focus" : ""}" type="button" data-order-metric-status="${status}" data-order-metric-filter="${metric}" aria-pressed="${active}">
+    <button class="metric-card metric-nav order-metric ${active ? "focus" : ""}" type="button" data-order-metric-status="${status}" data-order-metric-filter="${metric}" aria-pressed="${active}" aria-label="${escapeText(`${label}: ${value}. Filter Orders`)}">
       <span>${escapeText(label)}</span><strong>${value}</strong>
     </button>
   `;

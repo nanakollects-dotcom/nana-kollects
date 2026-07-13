@@ -470,6 +470,13 @@ revoke all on function public.reopen_order_packing(uuid) from public;
 revoke all on function public.mark_order_shipped(uuid, text, text, text, timestamptz, text) from public;
 revoke all on function public.mark_order_completed(uuid, timestamptz, text) from public;
 
+revoke all on function public.start_order_packing(uuid) from anon;
+revoke all on function public.set_order_item_packed(uuid, boolean) from anon;
+revoke all on function public.mark_order_packed(uuid) from anon;
+revoke all on function public.reopen_order_packing(uuid) from anon;
+revoke all on function public.mark_order_shipped(uuid, text, text, text, timestamptz, text) from anon;
+revoke all on function public.mark_order_completed(uuid, timestamptz, text) from anon;
+
 grant execute on function public.start_order_packing(uuid) to authenticated;
 grant execute on function public.set_order_item_packed(uuid, boolean) to authenticated;
 grant execute on function public.mark_order_packed(uuid) to authenticated;

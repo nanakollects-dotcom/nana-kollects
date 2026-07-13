@@ -57,6 +57,16 @@ export function isOrderStatus(value) {
   return Object.values(ORDER_STATUSES).includes(value);
 }
 
+export function normalizeOrderStatus(value) {
+  const normalized = String(value || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+  return isOrderStatus(normalized) ? normalized : "";
+}
+
+export function normalizeFulfillmentMethod(value) {
+  const normalized = String(value || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+  return Object.values(FULFILLMENT_METHODS).includes(normalized) ? normalized : "";
+}
+
 export const ORDER_VALIDATION_MESSAGES = {
   ORDER_NOT_FOUND: "Order not found.",
   ITEM_NOT_FOUND: "Order Item not found.",
@@ -87,17 +97,33 @@ export function canTransitionOrder(fromStatus, toStatus, fulfillmentMethod = FUL
 }
 
 export function getOrderChecklistProgress(items = []) {
-  const requiredItems = items.filter((item) => item.packingRequired !== false);
-  const checked = requiredItems.filter((item) => Boolean(item.checkedAt)).length;
-  const total = requiredItems.length;
+  const safeItems = Array.isArray(items) ? items : [];
+  const shapeKnown = safeItems.length > 0 && safeItems.every((item) => {
+    const quantity = Number(item.quantity);
+    return typeof item.packingRequired === "boolean"
+      && Number.isSafeInteger(quantity)
+      && quantity > 0;
+  });
+  const requiredItems = shapeKnown ? safeItems.filter((item) => item.packingRequired) : [];
+  const total = shapeKnown ? requiredItems.reduce((sum, item) => sum + Number(item.quantity), 0) : null;
+  const checked = shapeKnown
+    ? requiredItems.filter((item) => Boolean(item.checkedAt)).reduce((sum, item) => sum + Number(item.quantity), 0)
+    : null;
 
   return {
     checked,
     total,
-    remaining: Math.max(total - checked, 0),
-    complete: total > 0 && checked === total,
-    percent: total ? Math.round((checked / total) * 100) : 0,
+    remaining: shapeKnown ? Math.max(total - checked, 0) : null,
+    complete: shapeKnown && total > 0 && checked === total,
+    percent: shapeKnown && total ? Math.round((checked / total) * 100) : 0,
+    available: shapeKnown,
   };
+}
+
+export function getOrderProgressLabel(progress = {}) {
+  if (!progress.available) return "Packing progress unavailable";
+  if (!progress.total) return "No packing items";
+  return `${progress.checked} of ${progress.total} packed`;
 }
 
 const NEEDS_ACTION_STATUSES = [
@@ -115,46 +141,57 @@ const STATUS_PRIORITY = {
 };
 
 function timestamp(value) {
+  if (value === null || value === undefined || String(value).trim() === "") return null;
   const parsed = new Date(value).getTime();
-  return Number.isFinite(parsed) ? parsed : 0;
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function isSameLocalDay(value, comparison = new Date()) {
+  if (value === null || value === undefined || String(value).trim() === "") return false;
+  if (comparison === null || comparison === undefined || String(comparison).trim() === "") return false;
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return false;
-  return date.getFullYear() === comparison.getFullYear()
-    && date.getMonth() === comparison.getMonth()
-    && date.getDate() === comparison.getDate();
+  const comparisonDate = comparison instanceof Date ? comparison : new Date(comparison);
+  if (Number.isNaN(date.getTime()) || Number.isNaN(comparisonDate.getTime())) return false;
+  return date.getFullYear() === comparisonDate.getFullYear()
+    && date.getMonth() === comparisonDate.getMonth()
+    && date.getDate() === comparisonDate.getDate();
 }
 
 export function orderNeedsAction(order = {}) {
-  return NEEDS_ACTION_STATUSES.includes(order.fulfillmentStatus);
+  return NEEDS_ACTION_STATUSES.includes(normalizeOrderStatus(order.fulfillmentStatus));
 }
 
 export function getOrderStatusLabel(status) {
-  return ORDER_STATUS_LABELS[status] || "Unknown";
+  return ORDER_STATUS_LABELS[normalizeOrderStatus(status)] || "Status unavailable";
 }
 
 export function getOrderStatusClass(status) {
-  return ORDER_STATUS_CLASSES[status] || "gray-pill";
+  return ORDER_STATUS_CLASSES[normalizeOrderStatus(status)] || "gray-pill";
 }
 
 export function getFulfillmentMethodLabel(method) {
-  return FULFILLMENT_METHOD_LABELS[method] || "Unknown";
+  return FULFILLMENT_METHOD_LABELS[normalizeFulfillmentMethod(method)] || "Method unavailable";
 }
 
 export function getOrderNextActionLabel(order = {}) {
-  if (order.fulfillmentStatus === ORDER_STATUSES.READY_TO_PACK) return "Start Packing";
-  if (order.fulfillmentStatus === ORDER_STATUSES.PACKING) return "Continue Packing";
-  if (order.fulfillmentStatus === ORDER_STATUSES.PACKED) {
-    return order.fulfillmentMethod === FULFILLMENT_METHODS.PICKUP ? "Complete Handoff" : "Mark as Shipped";
+  const status = normalizeOrderStatus(order.fulfillmentStatus);
+  const method = normalizeFulfillmentMethod(order.fulfillmentMethod);
+  if (status === ORDER_STATUSES.READY_TO_PACK) return "Start Packing";
+  if (status === ORDER_STATUSES.PACKING) return "Continue Packing";
+  if (status === ORDER_STATUSES.PACKED) {
+    if (method === FULFILLMENT_METHODS.PICKUP) return "Complete Handoff";
+    if ([FULFILLMENT_METHODS.SHIPMENT, FULFILLMENT_METHODS.LOCAL_DELIVERY].includes(method)) return "Mark as Shipped";
+    return "View Order";
   }
-  if (order.fulfillmentStatus === ORDER_STATUSES.SHIPPED) return "Mark Completed";
+  if (status === ORDER_STATUSES.SHIPPED) return "Mark Completed";
   return "View Order";
 }
 
 export function formatOrderWaitingTime(createdAt, now = new Date()) {
-  const elapsed = Math.max(now.getTime() - timestamp(createdAt), 0);
+  const createdTimestamp = timestamp(createdAt);
+  const nowTimestamp = timestamp(now);
+  if (createdTimestamp === null || nowTimestamp === null) return "Waiting unavailable";
+  const elapsed = Math.max(nowTimestamp - createdTimestamp, 0);
   const hours = Math.floor(elapsed / (60 * 60 * 1000));
   if (hours < 1) return "<1h";
   if (hours < 24) return `${hours}h`;
@@ -162,31 +199,37 @@ export function formatOrderWaitingTime(createdAt, now = new Date()) {
 }
 
 export function getOrderItemCount(items = []) {
-  return items.reduce((total, item) => total + Math.max(Number(item.quantity) || 1, 1), 0);
+  if (!Array.isArray(items) || !items.length) return null;
+  const quantities = items.map((item) => Number(item.quantity));
+  if (quantities.some((quantity) => !Number.isSafeInteger(quantity) || quantity <= 0)) return null;
+  return quantities.reduce((total, quantity) => total + quantity, 0);
 }
 
 export function getOrderQueueMetrics(orders = [], now = new Date()) {
+  const safeOrders = Array.isArray(orders) ? orders : [];
   return {
-    readyToPack: orders.filter((order) => order.fulfillmentStatus === ORDER_STATUSES.READY_TO_PACK).length,
-    packing: orders.filter((order) => order.fulfillmentStatus === ORDER_STATUSES.PACKING).length,
-    packed: orders.filter((order) => order.fulfillmentStatus === ORDER_STATUSES.PACKED).length,
-    shippedToday: orders.filter((order) => isSameLocalDay(order.shippedAt, now)).length,
-    completedToday: orders.filter((order) => isSameLocalDay(order.completedAt, now)).length,
+    readyToPack: safeOrders.filter((order) => normalizeOrderStatus(order.fulfillmentStatus) === ORDER_STATUSES.READY_TO_PACK).length,
+    packing: safeOrders.filter((order) => normalizeOrderStatus(order.fulfillmentStatus) === ORDER_STATUSES.PACKING).length,
+    packed: safeOrders.filter((order) => normalizeOrderStatus(order.fulfillmentStatus) === ORDER_STATUSES.PACKED).length,
+    shippedToday: safeOrders.filter((order) => isSameLocalDay(order.shippedAt, now)).length,
+    completedToday: safeOrders.filter((order) => isSameLocalDay(order.completedAt, now)).length,
   };
 }
 
 export function filterOrders(orders = [], orderItems = [], options = {}) {
+  const safeOrders = Array.isArray(orders) ? orders : [];
+  const safeItems = Array.isArray(orderItems) ? orderItems : [];
   const search = String(options.search || "").trim().toLowerCase();
   const status = options.status || ORDER_QUEUE_FILTERS.NEEDS_ACTION;
   const method = options.method || ORDER_QUEUE_FILTERS.ALL;
   const itemTextByOrder = new Map();
 
-  for (const item of orderItems) {
+  for (const item of safeItems) {
     const current = itemTextByOrder.get(item.orderId) || "";
     itemTextByOrder.set(item.orderId, `${current} ${item.itemName || ""} ${item.sku || ""}`.toLowerCase());
   }
 
-  return orders.filter((order) => {
+  return safeOrders.filter((order) => {
     const searchable = [
       order.orderNumber,
       order.customerName,
@@ -196,11 +239,16 @@ export function filterOrders(orders = [], orderItems = [], options = {}) {
       itemTextByOrder.get(order.id),
     ].join(" ").toLowerCase();
     const createdAt = timestamp(order.createdAt);
-    const matchesPeriod = (!options.startDate || createdAt >= timestamp(options.startDate))
-      && (!options.endDate || createdAt <= timestamp(options.endDate));
+    const startDate = timestamp(options.startDate);
+    const endDate = timestamp(options.endDate);
+    const matchesPeriod = startDate === null && endDate === null
+      ? true
+      : createdAt !== null && (startDate === null || createdAt >= startDate) && (endDate === null || createdAt <= endDate);
+    const normalizedStatus = normalizeOrderStatus(order.fulfillmentStatus);
+    const normalizedMethod = normalizeFulfillmentMethod(order.fulfillmentMethod);
     const matchesStatus = status === ORDER_QUEUE_FILTERS.ALL
-      || (status === ORDER_QUEUE_FILTERS.NEEDS_ACTION ? orderNeedsAction(order) : order.fulfillmentStatus === status);
-    const matchesMethod = method === ORDER_QUEUE_FILTERS.ALL || order.fulfillmentMethod === method;
+      || (status === ORDER_QUEUE_FILTERS.NEEDS_ACTION ? orderNeedsAction(order) : normalizedStatus === normalizeOrderStatus(status));
+    const matchesMethod = method === ORDER_QUEUE_FILTERS.ALL || normalizedMethod === normalizeFulfillmentMethod(method);
     const matchesMetric = options.metricFilter === "shipped_today"
       ? isSameLocalDay(order.shippedAt, options.now || new Date())
       : options.metricFilter === "completed_today"
@@ -212,24 +260,40 @@ export function filterOrders(orders = [], orderItems = [], options = {}) {
 }
 
 export function sortOrders(orders = [], sort = ORDER_SORTS.PRIORITY) {
-  const byCreated = (a, b) => timestamp(a.createdAt) - timestamp(b.createdAt);
-  const byNewest = (a, b) => timestamp(b.createdAt) - timestamp(a.createdAt);
-  const copy = orders.slice();
+  const byIdentity = (a, b) => String(a.orderNumber || a.id || "").localeCompare(String(b.orderNumber || b.id || ""), undefined, { numeric: true, sensitivity: "base" });
+  const byDate = (a, b, direction) => {
+    const aTimestamp = timestamp(a.createdAt);
+    const bTimestamp = timestamp(b.createdAt);
+    if (aTimestamp === null && bTimestamp === null) return byIdentity(a, b);
+    if (aTimestamp === null) return 1;
+    if (bTimestamp === null) return -1;
+    return direction * (aTimestamp - bTimestamp) || byIdentity(a, b);
+  };
+  const byCreated = (a, b) => byDate(a, b, 1);
+  const byNewest = (a, b) => byDate(a, b, -1);
+  const copy = Array.isArray(orders) ? orders.slice() : [];
 
   if (sort === ORDER_SORTS.OLDEST) return copy.sort(byCreated);
   if (sort === ORDER_SORTS.NEWEST) return copy.sort(byNewest);
   if (sort === ORDER_SORTS.CUSTOMER) {
-    return copy.sort((a, b) => String(a.customerName || "").localeCompare(String(b.customerName || ""), undefined, { sensitivity: "base" }) || byCreated(a, b));
+    return copy.sort((a, b) => {
+      const aName = String(a.customerName || "").trim();
+      const bName = String(b.customerName || "").trim();
+      if (!aName && !bName) return byCreated(a, b);
+      if (!aName) return 1;
+      if (!bName) return -1;
+      return aName.localeCompare(bName, undefined, { sensitivity: "base" }) || byCreated(a, b);
+    });
   }
   if (sort === ORDER_SORTS.STATUS) {
-    return copy.sort((a, b) => (STATUS_PRIORITY[a.fulfillmentStatus] ?? 99) - (STATUS_PRIORITY[b.fulfillmentStatus] ?? 99) || byCreated(a, b));
+    return copy.sort((a, b) => (STATUS_PRIORITY[normalizeOrderStatus(a.fulfillmentStatus)] ?? 99) - (STATUS_PRIORITY[normalizeOrderStatus(b.fulfillmentStatus)] ?? 99) || byCreated(a, b));
   }
 
   return copy.sort((a, b) => {
     const aNeedsAction = orderNeedsAction(a);
     const bNeedsAction = orderNeedsAction(b);
     if (aNeedsAction !== bNeedsAction) return aNeedsAction ? -1 : 1;
-    if (aNeedsAction) return (STATUS_PRIORITY[a.fulfillmentStatus] ?? 99) - (STATUS_PRIORITY[b.fulfillmentStatus] ?? 99) || byCreated(a, b);
+    if (aNeedsAction) return (STATUS_PRIORITY[normalizeOrderStatus(a.fulfillmentStatus)] ?? 99) - (STATUS_PRIORITY[normalizeOrderStatus(b.fulfillmentStatus)] ?? 99) || byCreated(a, b);
     return byNewest(a, b);
   });
 }

@@ -358,4 +358,5 @@ end;
 $$;
 
 revoke all on function public.mark_payment_request_paid(uuid, text) from public;
+revoke all on function public.mark_payment_request_paid(uuid, text) from anon;
 grant execute on function public.mark_payment_request_paid(uuid, text) to authenticated;

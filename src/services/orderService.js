@@ -1,5 +1,5 @@
 import { supabase } from "./supabaseClient.js";
-import { FULFILLMENT_METHODS, isOrderStatus, ORDER_STATUSES } from "../core/orders.js";
+import { normalizeFulfillmentMethod, normalizeOrderStatus } from "../core/orders.js";
 
 const money = (value) => Math.round(Number(value || 0) * 100) / 100;
 
@@ -15,18 +15,14 @@ async function resolveUserId(userId) {
 function normalizeOrder(row) {
   return {
     id: row.id,
-    orderNumber: row.order_number,
+    orderNumber: row.order_number || "",
     sourceType: row.source_type,
     sourcePaymentRequestId: row.source_payment_request_id,
-    customerName: row.customer_name,
+    customerName: row.customer_name || "",
     customerContact: row.customer_contact || "",
     shippingAddress: row.shipping_address || "",
-    fulfillmentMethod: Object.values(FULFILLMENT_METHODS).includes(row.fulfillment_method)
-      ? row.fulfillment_method
-      : FULFILLMENT_METHODS.SHIPMENT,
-    fulfillmentStatus: isOrderStatus(row.fulfillment_status)
-      ? row.fulfillment_status
-      : ORDER_STATUSES.READY_TO_PACK,
+    fulfillmentMethod: normalizeFulfillmentMethod(row.fulfillment_method),
+    fulfillmentStatus: normalizeOrderStatus(row.fulfillment_status),
     currency: row.currency,
     subtotal: money(row.subtotal_snapshot),
     shippingFee: money(row.shipping_fee_snapshot),
@@ -54,8 +50,8 @@ function normalizeOrderItem(row) {
     sku: row.sku_snapshot,
     itemName: row.item_name_snapshot,
     sellingPrice: money(row.selling_price_snapshot),
-    quantity: Number(row.quantity),
-    packingRequired: row.packing_required,
+    quantity: Number.isSafeInteger(Number(row.quantity)) && Number(row.quantity) > 0 ? Number(row.quantity) : null,
+    packingRequired: typeof row.packing_required === "boolean" ? row.packing_required : null,
     checkedAt: row.checked_at,
     checkedBy: row.checked_by,
     createdAt: row.created_at,

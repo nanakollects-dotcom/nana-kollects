@@ -1014,6 +1014,10 @@ button:disabled {
   width: 100%;
 }
 
+.order-card .order-next-action {
+  margin-inline: 0;
+}
+
 .order-next-action {
   min-width: 140px;
 }

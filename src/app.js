@@ -180,12 +180,22 @@ function showAuth() {
 }
 
 async function initAuth() {
-  const user = await getCurrentUser();
+  try {
+    const user = await getCurrentUser();
 
-  if (user) {
-    await showApp();
-  } else {
+    if (user) {
+      setAuthMessage("Loading business data...");
+      await showApp();
+      setAuthMessage("");
+    } else {
+      showAuth();
+    }
+  } catch (error) {
+    console.error(error);
     showAuth();
+    const message = "Could not load business data. Check your connection and try again.";
+    setAuthMessage(message, true);
+    notify(message, true);
   }
 }
 

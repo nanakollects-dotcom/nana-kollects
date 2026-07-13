@@ -1,4 +1,5 @@
 import { loadStore, replaceStore } from "./storage.js";
+import { loadSupabaseOrders } from "./orderService.js";
 
 import {
   loadSupabaseStore,
@@ -66,6 +67,10 @@ export function getStore() {
 
 export async function getSupabaseStore() {
   return loadSupabaseStore();
+}
+
+export async function getSupabaseOrders() {
+  return runRepositoryOperation(() => loadSupabaseOrders());
 }
 
 export function friendlyErrorMessage(error) {

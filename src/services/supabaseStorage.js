@@ -2,6 +2,7 @@ import { supabase } from "./supabaseClient.js";
 import { emptyStore, loadStore, normalizeStore } from "./storage.js";
 import { hasKnownCost, normalizeCostInput } from "../core/costs.js";
 import { COURIER_OPTIONS, DEFAULT_PAYMENT_CONFIG, normalizeShippingMode, SHIPPING_MODES, validatePaymentRequestRequiredFields } from "../core/paymentRequests.js";
+import { loadSupabaseOrders } from "./orderService.js";
 
 const STATUSES = {
   AVAILABLE: "Available",
@@ -159,6 +160,7 @@ export async function loadSupabaseStore() {
     logsResult,
     settingsResult,
     paymentRequestsResult,
+    orderDomain,
   ] = await Promise.all([
     supabase.from("collections").select("*").eq("user_id", userId),
     supabase.from("inventory_items").select("*").eq("user_id", userId),
@@ -169,6 +171,7 @@ export async function loadSupabaseStore() {
     supabase.from("activity_logs").select("*").eq("user_id", userId),
     supabase.from("settings").select("*").eq("user_id", userId),
     supabase.from("payment_requests").select("*").eq("user_id", userId).order("issued_at", { ascending: false }),
+    loadSupabaseOrders(userId),
   ]);
 
   const results = [
@@ -202,6 +205,7 @@ export async function loadSupabaseStore() {
 
   return {
     ...emptyStore(),
+    ...orderDomain,
 
     collections,
 
@@ -1150,6 +1154,13 @@ export async function replaceSupabaseStoreFromBackup(rawStore) {
   const store = normalizeStore(rawStore);
   const collectionIds = new Map();
   const inventoryIds = new Map();
+
+  const { count: orderCount, error: orderCountError } = await supabase
+    .from("orders")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId);
+  if (orderCountError) throw orderCountError;
+  assert(!orderCount, "Backup replacement is disabled after Orders exist to protect fulfillment history.");
 
   const deleteResults = await Promise.all([
     supabase.from("payment_requests").delete().eq("user_id", userId),

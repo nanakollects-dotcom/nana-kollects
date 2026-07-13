@@ -16,6 +16,9 @@ export const emptyStore = () => ({
   logs: [],
   collections: [],
   paymentRequests: [],
+  orders: [],
+  orderItems: [],
+  orderEvents: [],
   paymentConfig: { ...DEFAULT_PAYMENT_CONFIG },
   meta: {
     lastSkuNumber: 0,
@@ -81,6 +84,9 @@ export function normalizeStore(rawStore = {}) {
     ...rawStore,
     capital: capitalSource.map(normalizeCapitalEntry),
     inventory,
+    orders: Array.isArray(rawStore.orders) ? rawStore.orders : [],
+    orderItems: Array.isArray(rawStore.orderItems) ? rawStore.orderItems : [],
+    orderEvents: Array.isArray(rawStore.orderEvents) ? rawStore.orderEvents : [],
     meta,
   };
 }

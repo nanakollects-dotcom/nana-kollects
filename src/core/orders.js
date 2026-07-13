@@ -126,6 +126,79 @@ export function getOrderProgressLabel(progress = {}) {
   return `${progress.checked} of ${progress.total} packed`;
 }
 
+export const PACKING_READINESS = {
+  NOT_STARTED: "not_started",
+  IN_PROGRESS: "in_progress",
+  READY: "ready",
+  NOT_REQUIRED: "not_required",
+  UNAVAILABLE: "unavailable",
+};
+
+export function getPackingWorkspaceState(items, collectionAvailable = Array.isArray(items)) {
+  if (!collectionAvailable || !Array.isArray(items)) {
+    return {
+      available: false,
+      requiredItems: null,
+      requiredQuantity: null,
+      checkedItems: null,
+      checkedQuantity: null,
+      remainingItems: null,
+      percent: null,
+      readiness: PACKING_READINESS.UNAVAILABLE,
+      invalidQuantityCount: 0,
+      malformedPackingStateCount: 0,
+      uncheckedRequiredCount: 0,
+    };
+  }
+
+  const required = items.filter((item) => item?.packingRequired === true);
+  const invalidQuantityCount = items.filter((item) => {
+    const quantity = Number(item?.quantity);
+    return !Number.isSafeInteger(quantity) || quantity <= 0;
+  }).length;
+  const malformedPackingStateCount = items.filter((item) => typeof item?.packingRequired !== "boolean").length;
+  const checked = required.filter((item) => Boolean(item.checkedAt));
+  const quantitiesAvailable = required.every((item) => {
+    const quantity = Number(item.quantity);
+    return Number.isSafeInteger(quantity) && quantity > 0;
+  });
+  const requiredQuantity = quantitiesAvailable
+    ? required.reduce((sum, item) => sum + Number(item.quantity), 0)
+    : null;
+  const checkedQuantity = quantitiesAvailable
+    ? checked.reduce((sum, item) => sum + Number(item.quantity), 0)
+    : null;
+  const shapeAvailable = items.length > 0 && malformedPackingStateCount === 0;
+  const noPackingRequired = shapeAvailable && required.length === 0;
+  const readiness = !shapeAvailable || !quantitiesAvailable
+    ? PACKING_READINESS.UNAVAILABLE
+    : noPackingRequired
+      ? PACKING_READINESS.NOT_REQUIRED
+      : checked.length === 0
+        ? PACKING_READINESS.NOT_STARTED
+        : checked.length === required.length
+          ? PACKING_READINESS.READY
+          : PACKING_READINESS.IN_PROGRESS;
+
+  return {
+    available: shapeAvailable && quantitiesAvailable,
+    requiredItems: shapeAvailable ? required.length : null,
+    requiredQuantity,
+    checkedItems: shapeAvailable ? checked.length : null,
+    checkedQuantity,
+    remainingItems: shapeAvailable ? Math.max(required.length - checked.length, 0) : null,
+    percent: quantitiesAvailable && requiredQuantity
+      ? Math.round((checkedQuantity / requiredQuantity) * 100)
+      : noPackingRequired
+        ? 100
+        : null,
+    readiness,
+    invalidQuantityCount,
+    malformedPackingStateCount,
+    uncheckedRequiredCount: required.length - checked.length,
+  };
+}
+
 const NEEDS_ACTION_STATUSES = [
   ORDER_STATUSES.READY_TO_PACK,
   ORDER_STATUSES.PACKING,

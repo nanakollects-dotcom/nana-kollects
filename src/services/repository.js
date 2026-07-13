@@ -1,5 +1,13 @@
 import { loadStore, replaceStore } from "./storage.js";
-import { loadSupabaseOrders } from "./orderService.js";
+import {
+  loadSupabaseOrders,
+  markSupabaseOrderCompleted,
+  markSupabaseOrderPacked,
+  markSupabaseOrderShipped,
+  reopenSupabaseOrderPacking,
+  setSupabaseOrderItemPacked,
+  startSupabaseOrderPacking,
+} from "./orderService.js";
 
 import {
   loadSupabaseStore,
@@ -71,6 +79,37 @@ export async function getSupabaseStore() {
 
 export async function getSupabaseOrders() {
   return runRepositoryOperation(() => loadSupabaseOrders());
+}
+
+async function runOrderOperation(operation) {
+  return runRepositoryOperation(async () => {
+    await operation();
+    return syncSupabaseStore();
+  });
+}
+
+export function startOrderPacking(orderId) {
+  return runOrderOperation(() => startSupabaseOrderPacking(orderId));
+}
+
+export function setOrderItemPacked(orderItemId, checked) {
+  return runOrderOperation(() => setSupabaseOrderItemPacked(orderItemId, checked));
+}
+
+export function markOrderPacked(orderId) {
+  return runOrderOperation(() => markSupabaseOrderPacked(orderId));
+}
+
+export function reopenOrderPacking(orderId) {
+  return runOrderOperation(() => reopenSupabaseOrderPacking(orderId));
+}
+
+export function markOrderShipped(orderId, input) {
+  return runOrderOperation(() => markSupabaseOrderShipped(orderId, input));
+}
+
+export function markOrderCompleted(orderId, input) {
+  return runOrderOperation(() => markSupabaseOrderCompleted(orderId, input));
 }
 
 export function friendlyErrorMessage(error) {

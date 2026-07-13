@@ -92,3 +92,47 @@ export async function loadSupabaseOrders(userId) {
     orderEvents: (eventsResult.data || []).map(normalizeOrderEvent),
   };
 }
+
+async function runOrderRpc(name, params) {
+  const { data, error } = await supabase.rpc(name, params);
+  if (error) throw error;
+  return data;
+}
+
+export function startSupabaseOrderPacking(orderId) {
+  return runOrderRpc("start_order_packing", { p_order_id: orderId });
+}
+
+export function setSupabaseOrderItemPacked(orderItemId, checked) {
+  return runOrderRpc("set_order_item_packed", {
+    p_order_item_id: orderItemId,
+    p_checked: typeof checked === "boolean" ? checked : null,
+  });
+}
+
+export function markSupabaseOrderPacked(orderId) {
+  return runOrderRpc("mark_order_packed", { p_order_id: orderId });
+}
+
+export function reopenSupabaseOrderPacking(orderId) {
+  return runOrderRpc("reopen_order_packing", { p_order_id: orderId });
+}
+
+export function markSupabaseOrderShipped(orderId, input = {}) {
+  return runOrderRpc("mark_order_shipped", {
+    p_order_id: orderId,
+    p_courier: String(input.courier || "").trim(),
+    p_tracking_number: String(input.trackingNumber || "").trim(),
+    p_no_tracking_reason: String(input.noTrackingReason || "").trim(),
+    p_shipped_at: input.shippedAt || null,
+    p_shipping_note: String(input.shippingNote || "").trim(),
+  });
+}
+
+export function markSupabaseOrderCompleted(orderId, input = {}) {
+  return runOrderRpc("mark_order_completed", {
+    p_order_id: orderId,
+    p_completed_at: input.completedAt || null,
+    p_note: String(input.note || "").trim(),
+  });
+}

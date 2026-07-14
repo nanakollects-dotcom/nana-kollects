@@ -197,9 +197,19 @@ select public.set_order_item_packed(
 select public.mark_order_packed(
   (select id from public.orders where source_payment_request_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1')
 );
-select public.mark_order_packed(
-  (select id from public.orders where source_payment_request_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1')
-);
+do $$
+declare
+  v_order_id uuid := (select id from public.orders where source_payment_request_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1');
+begin
+  begin
+    perform public.mark_order_packed(v_order_id);
+    raise exception 'Packed Order unexpectedly transitioned again.';
+  exception
+    when raise_exception then
+      if sqlerrm <> 'Only Packing Orders can be marked Packed.' then raise; end if;
+  end;
+end;
+$$;
 select public.reopen_order_packing(
   (select id from public.orders where source_payment_request_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1')
 );
@@ -351,7 +361,7 @@ begin
     raise exception 'Pickup skipped directly to Packed.';
   exception
     when raise_exception then
-      if sqlerrm <> 'Check every required Order Item before marking Packed.' then raise; end if;
+      if sqlerrm <> 'Only Packing Orders can be marked Packed.' then raise; end if;
   end;
   begin
     perform public.mark_order_completed(v_pickup_order_id, now(), null);

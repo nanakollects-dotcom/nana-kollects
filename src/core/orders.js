@@ -172,6 +172,16 @@ export function canToggleOrderPackingItem(order, item) {
   return getPackingItemState(item) !== PACKING_ITEM_STATES.UNAVAILABLE;
 }
 
+export function canMarkOrderPacked(order, items, collectionAvailable = Array.isArray(items)) {
+  if (!order || !isOrderEntityId(order.id)) return false;
+  if (normalizeOrderStatus(order.fulfillmentStatus) !== ORDER_STATUSES.PACKING) return false;
+  if (!collectionAvailable || !Array.isArray(items)) return false;
+
+  const requiredItems = items.filter((item) => item?.orderId === order.id && item?.packingRequired === true);
+  return requiredItems.length > 0
+    && requiredItems.every((item) => getPackingItemState(item) === PACKING_ITEM_STATES.CHECKED);
+}
+
 export function getPackingWorkspaceState(items, collectionAvailable = Array.isArray(items)) {
   if (!collectionAvailable || !Array.isArray(items)) {
     return {

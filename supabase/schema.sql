@@ -1047,6 +1047,9 @@ begin
   if not found then
     raise exception 'Order not found.';
   end if;
+  if v_order.fulfillment_status <> 'packing' then
+    raise exception 'Only Packing Orders can be marked Packed.';
+  end if;
 
   perform 1
   from public.order_items
@@ -1062,20 +1065,16 @@ begin
   end if;
   if exists (
     select 1 from public.order_items
-    where order_id = v_order.id and user_id = v_user_id
-      and packing_required and checked_at is null
+    where order_id = v_order.id
+      and user_id = v_user_id
+      and packing_required
+      and (checked_at is null or checked_by is distinct from v_user_id)
   ) then
     raise exception 'Check every required Order Item before marking Packed.';
   end if;
-  if v_order.fulfillment_status = 'packed' then
-    return v_order;
-  end if;
-  if v_order.fulfillment_status <> 'packing' then
-    raise exception 'Only Packing Orders can be marked Packed.';
-  end if;
 
   update public.orders
-  set fulfillment_status = 'packed', packed_at = now()
+  set fulfillment_status = 'packed', packed_at = transaction_timestamp()
   where id = v_order.id and user_id = v_user_id
   returning * into v_order;
 

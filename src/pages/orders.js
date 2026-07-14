@@ -391,6 +391,146 @@ export function renderCompletionWorkspace(store = {}, orderId = "") {
   );
 }
 
+function packingSlipSummaryValue(label, value, fallback = "Unavailable") {
+  return `
+    <div class="packing-slip-summary-value">
+      <span>${escapeText(label)}</span>
+      <strong>${escapeText(displayText(value, fallback))}</strong>
+    </div>
+  `;
+}
+
+function renderPackingSlipItems(items, available) {
+  if (!available) {
+    return `<p class="packing-slip-unavailable">Order Items are unavailable in the loaded store. The Packing Slip cannot request them separately.</p>`;
+  }
+  if (!items.length) {
+    return `<p class="packing-slip-unavailable">No Order Items are recorded for this Order.</p>`;
+  }
+
+  const rows = items.map((item) => {
+    const quantity = Number(item.quantity);
+    const quantityLabel = Number.isSafeInteger(quantity) && quantity > 0 ? quantity : "Unavailable";
+    const packingRequired = item.packingRequired === true
+      ? "Required"
+      : item.packingRequired === false
+        ? "Not required"
+        : "Unavailable";
+    return `
+      <tr>
+        <td class="mono">${escapeText(displayText(item.sku, "Unavailable"))}</td>
+        <td>${escapeText(displayText(item.itemName, "Product name unavailable"))}</td>
+        <td>${escapeText(quantityLabel)}</td>
+        <td>${escapeText(formatMoney(item.sellingPrice))}</td>
+        <td>${escapeText(packingRequired)}</td>
+      </tr>
+    `;
+  }).join("");
+
+  const cards = items.map((item) => {
+    const quantity = Number(item.quantity);
+    const quantityLabel = Number.isSafeInteger(quantity) && quantity > 0 ? quantity : "Unavailable";
+    const packingRequired = item.packingRequired === true
+      ? "Required"
+      : item.packingRequired === false
+        ? "Not required"
+        : "Unavailable";
+    return `
+      <article class="packing-slip-item-card">
+        <strong>${escapeText(displayText(item.itemName, "Product name unavailable"))}</strong>
+        <span class="mono">${escapeText(displayText(item.sku, "SKU unavailable"))}</span>
+        <dl>
+          <div><dt>Quantity</dt><dd>${escapeText(quantityLabel)}</dd></div>
+          <div><dt>Price snapshot</dt><dd>${escapeText(formatMoney(item.sellingPrice))}</dd></div>
+          <div><dt>Packing</dt><dd>${escapeText(packingRequired)}</dd></div>
+        </dl>
+      </article>
+    `;
+  }).join("");
+
+  return `
+    <div class="packing-slip-table-wrap">
+      <table class="packing-slip-table">
+        <thead><tr><th>SKU</th><th>Product Name</th><th>Quantity</th><th>Price Snapshot</th><th>Packing</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <div class="packing-slip-item-cards">${cards}</div>
+  `;
+}
+
+export function renderPackingSlipWorkspace(store = {}, orderId = "") {
+  const order = Array.isArray(store.orders) ? store.orders.find((entry) => entry.id === orderId) : null;
+  if (!order) {
+    return modal(
+      "Packing Slip",
+      `<div class="packing-slip-workspace"><div class="modal-header order-details-header packing-header packing-slip-chrome"><button class="icon-btn" type="button" data-back-to-order-details>Back</button><div><h2>Packing Slip</h2><p>Order reference unavailable</p></div><button class="icon-btn" type="button" data-close-order-details>Close</button></div><section class="modal-section">${emptyState("Order not found", "This Order is no longer available in the loaded store.")}</section></div>`,
+      "order-details-panel packing-slip-panel",
+    );
+  }
+
+  const reference = displayText(order.orderNumber, "Order reference unavailable");
+  const itemsAvailable = Array.isArray(store.orderItems);
+  const items = itemsAvailable ? store.orderItems.filter((item) => item.orderId === order.id) : [];
+  const validQuantities = items.map((item) => Number(item.quantity));
+  const totalQuantityAvailable = itemsAvailable && validQuantities.every((quantity) => Number.isSafeInteger(quantity) && quantity > 0);
+  const totalQuantity = totalQuantityAvailable ? validQuantities.reduce((sum, quantity) => sum + quantity, 0) : null;
+  const statusLabel = getOrderStatusLabel(order.fulfillmentStatus);
+  const methodLabel = getFulfillmentMethodLabel(order.fulfillmentMethod);
+
+  return modal(
+    `Packing Slip: ${escapeText(reference)}`,
+    `<div class="packing-slip-workspace">
+      <div class="modal-header order-details-header packing-header packing-slip-chrome">
+        <button class="icon-btn" type="button" data-back-to-order-details>Back</button>
+        <div><h2>Packing Slip</h2><p class="mono">${escapeText(reference)}</p></div>
+        <button class="icon-btn" type="button" data-close-order-details>Close</button>
+      </div>
+      <div class="packing-slip-actions packing-slip-chrome">
+        <p>Display-only document generated from the loaded Order snapshots.</p>
+        <button class="primary-btn" type="button" data-print-packing-slip aria-label="${escapeText(`Print Packing Slip for ${reference}`)}">Print Packing Slip</button>
+      </div>
+      <article class="packing-slip-document" aria-label="${escapeText(`Packing Slip for ${reference}`)}">
+        <header class="packing-slip-brand-header">
+          <div><span class="packing-slip-mark" aria-hidden="true">NK</span><div><strong>Nana Kollects</strong><small>Packing Slip</small></div></div>
+          <div><span>Order Reference</span><strong class="mono">${escapeText(reference)}</strong><span class="pill ${getOrderStatusClass(order.fulfillmentStatus)}">${escapeText(statusLabel)}</span></div>
+        </header>
+        <section class="packing-slip-header-grid" aria-label="Order and delivery details">
+          <div>
+            <h3>Order</h3>
+            ${packingSlipSummaryValue("Order date", formatCreatedAt(order.createdAt))}
+            ${packingSlipSummaryValue("Packed date", formatCreatedAt(order.packedAt))}
+            ${packingSlipSummaryValue("Courier", order.courier, "Not assigned")}
+            ${packingSlipSummaryValue("Tracking number", order.trackingNumber, "Not assigned")}
+          </div>
+          <div>
+            <h3>Ship To</h3>
+            ${packingSlipSummaryValue("Customer", order.customerName, "Customer unavailable")}
+            ${packingSlipSummaryValue("Contact number", order.customerContact, "No contact number")}
+            ${packingSlipSummaryValue("Shipping address", order.shippingAddress, methodLabel === "Pickup" ? "Pickup — no shipping address" : "Address unavailable")}
+          </div>
+        </section>
+        <section class="packing-slip-section packing-slip-items-section">
+          <div class="packing-slip-section-heading"><h3>Order Items</h3><strong>${escapeText(itemsAvailable ? `${items.length} ${items.length === 1 ? "line" : "lines"}` : "Unavailable")}</strong></div>
+          ${renderPackingSlipItems(items, itemsAvailable)}
+        </section>
+        <section class="packing-slip-section packing-slip-summary" aria-label="Packing Slip summary">
+          <h3>Summary</h3>
+          <div class="packing-slip-summary-grid">
+            ${packingSlipSummaryValue("Total items", itemsAvailable ? items.length : "", "Unavailable")}
+            ${packingSlipSummaryValue("Total quantity", totalQuantity === null ? "" : totalQuantity, "Unavailable")}
+            ${packingSlipSummaryValue("Payment method", order.paymentMethod, "Unavailable in Order snapshot")}
+            ${packingSlipSummaryValue("Shipping method", methodLabel)}
+            ${packingSlipSummaryValue("Shipping fee", formatMoney(order.shippingFee))}
+            ${packingSlipSummaryValue("Grand total", formatMoney(order.totalPaid))}
+          </div>
+        </section>
+      </article>
+    </div>`,
+    "order-details-panel packing-slip-panel",
+  );
+}
+
 function renderPackingItems(order, items, available, reference) {
   if (!available) return `<p class="order-details-unavailable">Order Items are unavailable in the current store.</p>`;
   if (!items.length) return `<p class="order-details-unavailable">No Order Items are recorded for this Order.</p>`;
@@ -613,6 +753,7 @@ export function renderOrderDetailsWorkspace(store = {}, orderId = "") {
       </section>
 
       <div class="order-details-actions">
+        <button class="primary-btn" type="button" data-open-packing-slip>View Packing Slip</button>
         <button class="primary-btn" type="button" data-open-packing-workspace>View Packing Workspace</button>
         ${shippingWorkspaceAvailable ? `<button class="primary-btn" type="button" data-open-shipping-workspace>View Shipping Workspace</button>` : ""}
         ${completionWorkspaceAvailable ? `<button class="primary-btn" type="button" data-open-completion-workspace>View Completion Workspace</button>` : ""}
@@ -746,7 +887,9 @@ function openOrderDetails(root, store, orderId, trigger, notify, refresh, packin
         ? renderShippingWorkspace(store, orderId)
         : view === "completion"
           ? renderCompletionWorkspace(store, orderId)
-          : renderOrderDetailsWorkspace(store, orderId);
+          : view === "slip"
+            ? renderPackingSlipWorkspace(store, orderId)
+            : renderOrderDetailsWorkspace(store, orderId);
     root.insertAdjacentHTML("beforeend", html);
     const panel = root.querySelector(".order-details-panel");
     backdrop = panel?.closest(".modal-backdrop") || null;
@@ -756,7 +899,16 @@ function openOrderDetails(root, store, orderId, trigger, notify, refresh, packin
     panel.querySelector("[data-open-packing-workspace]")?.addEventListener("click", () => show("packing"));
     panel.querySelector("[data-open-shipping-workspace]")?.addEventListener("click", () => show("shipping"));
     panel.querySelector("[data-open-completion-workspace]")?.addEventListener("click", () => show("completion"));
+    panel.querySelector("[data-open-packing-slip]")?.addEventListener("click", () => show("slip"));
     panel.querySelector("[data-back-to-order-details]")?.addEventListener("click", () => show("details", view));
+    panel.querySelector("[data-print-packing-slip]")?.addEventListener("click", () => {
+      document.body.classList.add("packing-slip-printing");
+      try {
+        window.print();
+      } finally {
+        document.body.classList.remove("packing-slip-printing");
+      }
+    });
     backdrop.addEventListener("click", (event) => {
       if (event.target === backdrop) close();
     });
@@ -1076,9 +1228,11 @@ function openOrderDetails(root, store, orderId, trigger, notify, refresh, packin
           ? panel.querySelector("[data-open-shipping-workspace]")
           : returnFocusTo === "completion"
             ? panel.querySelector("[data-open-completion-workspace]")
-            : ["packing", "shipping", "completion"].includes(view)
-              ? panel.querySelector("[data-back-to-order-details]")
-              : panel.querySelector("[data-close-order-details]"));
+            : returnFocusTo === "slip"
+              ? panel.querySelector("[data-open-packing-slip]")
+              : ["packing", "shipping", "completion", "slip"].includes(view)
+                ? panel.querySelector("[data-back-to-order-details]")
+                : panel.querySelector("[data-close-order-details]"));
     initialFocus?.focus();
   };
 

@@ -531,6 +531,200 @@ export function renderPackingSlipWorkspace(store = {}, orderId = "") {
   );
 }
 
+function orderSummaryMoney(value, currency, fallback = "Unavailable") {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return fallback;
+
+  const currencyCode = String(currency || "").trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(currencyCode)) {
+    return `${new Intl.NumberFormat("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount)} (currency unavailable)`;
+  }
+
+  try {
+    return new Intl.NumberFormat("en-PH", {
+      style: "currency",
+      currency: currencyCode,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  } catch {
+    return fallback;
+  }
+}
+
+function orderSummaryValue(label, value, fallback = "Unavailable") {
+  return `
+    <div class="order-summary-value">
+      <span>${escapeText(label)}</span>
+      <strong>${escapeText(displayText(value, fallback))}</strong>
+    </div>
+  `;
+}
+
+function orderSummaryItemSnapshot(item, currency) {
+  const quantity = Number(item.quantity);
+  const price = Number(item.sellingPrice);
+  const validQuantity = Number.isSafeInteger(quantity) && quantity > 0;
+  const validPrice = Number.isFinite(price) && price >= 0;
+  return {
+    quantity,
+    price,
+    validQuantity,
+    validPrice,
+    quantityLabel: validQuantity ? String(quantity) : "Unavailable",
+    priceLabel: validPrice ? orderSummaryMoney(price, currency) : "Unavailable",
+    lineTotal: validQuantity && validPrice ? quantity * price : null,
+  };
+}
+
+function renderOrderSummaryItems(items, available, currency) {
+  if (!available) {
+    return `<p class="order-summary-unavailable">Order Items are unavailable in the loaded store. The Order Summary cannot request them separately.</p>`;
+  }
+  if (!items.length) {
+    return `<p class="order-summary-unavailable">No Order Items are recorded for this Order.</p>`;
+  }
+
+  const rows = items.map((item) => {
+    const snapshot = orderSummaryItemSnapshot(item, currency);
+    return `
+      <tr>
+        <td class="mono">${escapeText(displayText(item.sku, "SKU unavailable"))}</td>
+        <td>${escapeText(displayText(item.itemName, "Item name unavailable"))}</td>
+        <td>${escapeText(snapshot.quantityLabel)}</td>
+        <td>${escapeText(snapshot.priceLabel)}</td>
+        <td>${escapeText(snapshot.lineTotal === null ? "Unavailable" : orderSummaryMoney(snapshot.lineTotal, currency))}</td>
+      </tr>
+    `;
+  }).join("");
+
+  const cards = items.map((item) => {
+    const snapshot = orderSummaryItemSnapshot(item, currency);
+    return `
+      <article class="order-summary-item-card">
+        <strong>${escapeText(displayText(item.itemName, "Item name unavailable"))}</strong>
+        <span class="mono">${escapeText(displayText(item.sku, "SKU unavailable"))}</span>
+        <dl>
+          <div><dt>Quantity</dt><dd>${escapeText(snapshot.quantityLabel)}</dd></div>
+          <div><dt>Unit price</dt><dd>${escapeText(snapshot.priceLabel)}</dd></div>
+          <div><dt>Line total</dt><dd>${escapeText(snapshot.lineTotal === null ? "Unavailable" : orderSummaryMoney(snapshot.lineTotal, currency))}</dd></div>
+        </dl>
+      </article>
+    `;
+  }).join("");
+
+  return `
+    <div class="order-summary-table-wrap">
+      <table class="order-summary-table">
+        <thead><tr><th>SKU</th><th>Item</th><th>Quantity</th><th>Unit Price</th><th>Line Total</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <div class="order-summary-item-cards">${cards}</div>
+  `;
+}
+
+export function renderOrderSummaryWorkspace(store = {}, orderId = "") {
+  const order = Array.isArray(store.orders) ? store.orders.find((entry) => entry.id === orderId) : null;
+  if (!order) {
+    return modal(
+      "Order Summary",
+      `<div class="order-summary-workspace"><div class="modal-header order-details-header order-summary-chrome"><button class="icon-btn" type="button" data-back-to-order-details>Back</button><div><h2>Order Summary</h2><p>Order reference unavailable</p></div><button class="icon-btn" type="button" data-close-order-details>Close</button></div><section class="modal-section">${emptyState("Order not found", "This Order is no longer available in the loaded store.")}</section></div>`,
+      "order-details-panel order-summary-panel",
+    );
+  }
+
+  const reference = displayText(order.orderNumber, "Order reference unavailable");
+  const currency = displayText(order.currency, "Currency unavailable");
+  const itemsAvailable = Array.isArray(store.orderItems);
+  const items = itemsAvailable ? store.orderItems.filter((item) => item.orderId === order.id) : [];
+  const itemSnapshots = items.map((item) => orderSummaryItemSnapshot(item, order.currency));
+  const derivedSubtotalAvailable = itemsAvailable && items.length > 0
+    && itemSnapshots.every((snapshot) => snapshot.lineTotal !== null);
+  const derivedSubtotal = derivedSubtotalAvailable
+    ? itemSnapshots.reduce((sum, snapshot) => sum + snapshot.lineTotal, 0)
+    : null;
+  const storedSubtotal = Number(order.subtotal);
+  const showAdjustmentNote = derivedSubtotal !== null && Number.isFinite(storedSubtotal)
+    && Math.abs(derivedSubtotal - storedSubtotal) >= 0.01;
+  const statusLabel = getOrderStatusLabel(order.fulfillmentStatus);
+  const methodLabel = getFulfillmentMethodLabel(order.fulfillmentMethod);
+  const addressFallback = methodLabel === "Pickup" ? "Pickup — address unavailable" : "Address unavailable";
+
+  return modal(
+    `Order Summary: ${escapeText(reference)}`,
+    `<div class="order-summary-workspace">
+      <div class="modal-header order-details-header order-summary-chrome">
+        <button class="icon-btn" type="button" data-back-to-order-details>Back</button>
+        <div><h2>Order Summary</h2><p class="mono">${escapeText(reference)}</p></div>
+        <button class="icon-btn" type="button" data-close-order-details>Close</button>
+      </div>
+      <div class="order-summary-actions order-summary-chrome">
+        <p>Customer-facing document generated only from loaded Order snapshots.</p>
+        <button class="primary-btn" type="button" data-print-order-summary aria-label="${escapeText(`Print Order Summary for ${reference}`)}">Print Order Summary</button>
+      </div>
+      <article class="order-summary-document" aria-label="${escapeText(`Order Summary for ${reference}`)}">
+        <header class="order-summary-brand-header">
+          <div><span class="order-summary-mark" aria-hidden="true">NK</span><div><strong>Nana Kollects</strong><small>Order Summary</small></div></div>
+          <div><span>Order Reference</span><strong class="mono">${escapeText(reference)}</strong><span class="pill ${getOrderStatusClass(order.fulfillmentStatus)}">${escapeText(statusLabel)}</span></div>
+        </header>
+        <section class="order-summary-meta" aria-label="Document and Order dates">
+          ${orderSummaryValue("Document generated", formatCreatedAt(new Date().toISOString()))}
+          ${orderSummaryValue("Order created", formatCreatedAt(order.createdAt))}
+          ${orderSummaryValue("Currency", currency)}
+        </section>
+        <section class="order-summary-details-grid" aria-label="Customer and fulfillment information">
+          <div>
+            <h3>Customer</h3>
+            ${orderSummaryValue("Name", order.customerName, "Customer unavailable")}
+            ${orderSummaryValue("Contact", order.customerContact, "No contact number")}
+            ${orderSummaryValue(methodLabel === "Pickup" ? "Pickup address" : "Shipping address", order.shippingAddress, addressFallback)}
+          </div>
+          <div>
+            <h3>Fulfillment</h3>
+            ${orderSummaryValue("Method", methodLabel, "Fulfillment method unavailable")}
+            ${orderSummaryValue("Status", statusLabel, "Status unavailable")}
+            ${orderSummaryValue("Courier", order.courier, "Not assigned")}
+            ${orderSummaryValue("Tracking number", order.trackingNumber, "Not assigned")}
+          </div>
+        </section>
+        <section class="order-summary-section order-summary-items-section">
+          <div class="order-summary-section-heading"><h3>Itemized Purchase</h3><strong>${escapeText(itemsAvailable ? `${items.length} ${items.length === 1 ? "line" : "lines"}` : "Unavailable")}</strong></div>
+          ${renderOrderSummaryItems(items, itemsAvailable, order.currency)}
+          ${showAdjustmentNote ? `<p class="order-summary-adjustment-note">Snapshot values may include adjustments. The stored Order subtotal remains authoritative.</p>` : ""}
+        </section>
+        <section class="order-summary-section order-summary-financial" aria-label="Financial snapshot">
+          <div><h3>Financial Snapshot</h3><p>Immutable values captured when the Order was created.</p></div>
+          <div class="order-summary-totals">
+            ${orderSummaryValue("Subtotal", orderSummaryMoney(order.subtotal, order.currency))}
+            ${orderSummaryValue("Shipping fee", orderSummaryMoney(order.shippingFee, order.currency))}
+            ${orderSummaryValue("Discount", orderSummaryMoney(order.discount, order.currency))}
+            ${orderSummaryValue("Payment method", order.paymentMethod, "Unavailable in Order snapshot")}
+            ${orderSummaryValue("Payment confirmed", formatCreatedAt(order.paymentConfirmedAt))}
+            <div class="order-summary-value order-summary-total-paid"><span>Total paid</span><strong>${escapeText(orderSummaryMoney(order.totalPaid, order.currency))}</strong></div>
+          </div>
+        </section>
+        <section class="order-summary-section" aria-label="Fulfillment summary">
+          <h3>Fulfillment Summary</h3>
+          <div class="order-summary-fulfillment-grid">
+            ${orderSummaryValue("Packed", formatCreatedAt(order.packedAt))}
+            ${orderSummaryValue("Shipped", formatCreatedAt(order.shippedAt))}
+            ${orderSummaryValue("Completed", formatCreatedAt(order.completedAt))}
+            ${orderSummaryValue("Current status", statusLabel, "Status unavailable")}
+            ${orderSummaryValue("Shipping note", order.shippingNote, "No shipping note")}
+          </div>
+        </section>
+        <footer class="order-summary-footer">
+          <strong>Thank you for choosing Nana Kollects.</strong>
+          <p>This document reflects the immutable values captured when the Order was created.</p>
+          <p>Unavailable fields were not included in the stored Order snapshot.</p>
+        </footer>
+      </article>
+    </div>`,
+    "order-details-panel order-summary-panel",
+  );
+}
+
 function renderPackingItems(order, items, available, reference) {
   if (!available) return `<p class="order-details-unavailable">Order Items are unavailable in the current store.</p>`;
   if (!items.length) return `<p class="order-details-unavailable">No Order Items are recorded for this Order.</p>`;
@@ -753,6 +947,7 @@ export function renderOrderDetailsWorkspace(store = {}, orderId = "") {
       </section>
 
       <div class="order-details-actions">
+        <button class="primary-btn" type="button" data-open-order-summary>View Order Summary</button>
         <button class="primary-btn" type="button" data-open-packing-slip>View Packing Slip</button>
         <button class="primary-btn" type="button" data-open-packing-workspace>View Packing Workspace</button>
         ${shippingWorkspaceAvailable ? `<button class="primary-btn" type="button" data-open-shipping-workspace>View Shipping Workspace</button>` : ""}
@@ -889,7 +1084,9 @@ function openOrderDetails(root, store, orderId, trigger, notify, refresh, packin
           ? renderCompletionWorkspace(store, orderId)
           : view === "slip"
             ? renderPackingSlipWorkspace(store, orderId)
-            : renderOrderDetailsWorkspace(store, orderId);
+            : view === "summary"
+              ? renderOrderSummaryWorkspace(store, orderId)
+              : renderOrderDetailsWorkspace(store, orderId);
     root.insertAdjacentHTML("beforeend", html);
     const panel = root.querySelector(".order-details-panel");
     backdrop = panel?.closest(".modal-backdrop") || null;
@@ -900,6 +1097,7 @@ function openOrderDetails(root, store, orderId, trigger, notify, refresh, packin
     panel.querySelector("[data-open-shipping-workspace]")?.addEventListener("click", () => show("shipping"));
     panel.querySelector("[data-open-completion-workspace]")?.addEventListener("click", () => show("completion"));
     panel.querySelector("[data-open-packing-slip]")?.addEventListener("click", () => show("slip"));
+    panel.querySelector("[data-open-order-summary]")?.addEventListener("click", () => show("summary"));
     panel.querySelector("[data-back-to-order-details]")?.addEventListener("click", () => show("details", view));
     panel.querySelector("[data-print-packing-slip]")?.addEventListener("click", () => {
       document.body.classList.add("packing-slip-printing");
@@ -907,6 +1105,14 @@ function openOrderDetails(root, store, orderId, trigger, notify, refresh, packin
         window.print();
       } finally {
         document.body.classList.remove("packing-slip-printing");
+      }
+    });
+    panel.querySelector("[data-print-order-summary]")?.addEventListener("click", () => {
+      document.body.classList.add("order-summary-printing");
+      try {
+        window.print();
+      } finally {
+        document.body.classList.remove("order-summary-printing");
       }
     });
     backdrop.addEventListener("click", (event) => {
@@ -1230,9 +1436,11 @@ function openOrderDetails(root, store, orderId, trigger, notify, refresh, packin
             ? panel.querySelector("[data-open-completion-workspace]")
             : returnFocusTo === "slip"
               ? panel.querySelector("[data-open-packing-slip]")
-              : ["packing", "shipping", "completion", "slip"].includes(view)
-                ? panel.querySelector("[data-back-to-order-details]")
-                : panel.querySelector("[data-close-order-details]"));
+              : returnFocusTo === "summary"
+                ? panel.querySelector("[data-open-order-summary]")
+                : ["packing", "shipping", "completion", "slip", "summary"].includes(view)
+                  ? panel.querySelector("[data-back-to-order-details]")
+                  : panel.querySelector("[data-close-order-details]"));
     initialFocus?.focus();
   };
 

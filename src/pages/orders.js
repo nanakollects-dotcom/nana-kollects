@@ -725,6 +725,168 @@ export function renderOrderSummaryWorkspace(store = {}, orderId = "") {
   );
 }
 
+function getShippingLabelAvailability(order) {
+  if (!order) return { available: false, title: "Order not found", message: "This Order is no longer available in the loaded store." };
+  if (order.fulfillmentMethod === FULFILLMENT_METHODS.PICKUP) {
+    return { available: false, title: "Shipping Label unavailable", message: "Pickup Orders do not require a Shipping Label." };
+  }
+  if (![FULFILLMENT_METHODS.SHIPMENT, FULFILLMENT_METHODS.LOCAL_DELIVERY].includes(order.fulfillmentMethod)) {
+    return { available: false, title: "Shipping Label unavailable", message: "The stored fulfillment method is unavailable or is not a supported shipping method." };
+  }
+  if (!String(order.customerName || "").trim()) {
+    return { available: false, title: "Recipient unavailable", message: "A recipient name is required before this Shipping Label can be displayed." };
+  }
+  if (!String(order.shippingAddress || "").trim()) {
+    return { available: false, title: "Shipping address unavailable", message: "A stored shipping address is required before this Shipping Label can be displayed." };
+  }
+  return { available: true, title: "", message: "" };
+}
+
+function shippingLabelValue(label, value, fallback = "Unavailable") {
+  return `
+    <div class="shipping-label-value">
+      <span>${escapeText(label)}</span>
+      <strong>${escapeText(displayText(value, fallback))}</strong>
+    </div>
+  `;
+}
+
+function renderShippingLabelItems(items, available) {
+  if (!available) {
+    return `<p class="shipping-label-unavailable">Order Items are unavailable in the loaded store. This document will not request them separately.</p>`;
+  }
+  if (!items.length) {
+    return `<p class="shipping-label-unavailable">No package contents are recorded for this Order.</p>`;
+  }
+
+  const rows = items.map((item) => {
+    const quantity = Number(item.quantity);
+    const quantityLabel = Number.isSafeInteger(quantity) && quantity > 0 ? String(quantity) : "Unavailable";
+    return `
+      <tr>
+        <td class="mono">${escapeText(displayText(item.sku, "SKU unavailable"))}</td>
+        <td>${escapeText(displayText(item.itemName, "Item name unavailable"))}</td>
+        <td>${escapeText(quantityLabel)}</td>
+      </tr>
+    `;
+  }).join("");
+
+  const cards = items.map((item) => {
+    const quantity = Number(item.quantity);
+    const quantityLabel = Number.isSafeInteger(quantity) && quantity > 0 ? String(quantity) : "Unavailable";
+    return `
+      <article class="shipping-label-item-card">
+        <strong>${escapeText(displayText(item.itemName, "Item name unavailable"))}</strong>
+        <span class="mono">${escapeText(displayText(item.sku, "SKU unavailable"))}</span>
+        <span>Quantity <strong>${escapeText(quantityLabel)}</strong></span>
+      </article>
+    `;
+  }).join("");
+
+  return `
+    <div class="shipping-label-table-wrap">
+      <table class="shipping-label-table">
+        <thead><tr><th>SKU</th><th>Item</th><th>Quantity</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <div class="shipping-label-item-cards">${cards}</div>
+  `;
+}
+
+export function renderShippingLabelWorkspace(store = {}, orderId = "") {
+  const order = Array.isArray(store.orders) ? store.orders.find((entry) => entry.id === orderId) : null;
+  const availability = getShippingLabelAvailability(order);
+  const reference = displayText(order?.orderNumber, "Order reference unavailable");
+
+  if (!availability.available) {
+    return modal(
+      `Shipping Label: ${escapeText(reference)}`,
+      `<div class="shipping-label-workspace">
+        <div class="modal-header order-details-header packing-header shipping-label-chrome">
+          <button class="icon-btn" type="button" data-back-to-order-details>Back</button>
+          <div><h2>Shipping Label / Shipment Summary</h2><p class="mono">${escapeText(reference)}</p></div>
+          <button class="icon-btn" type="button" data-close-order-details>Close</button>
+        </div>
+        <section class="modal-section">${emptyState(availability.title, availability.message)}</section>
+      </div>`,
+      "order-details-panel shipping-label-panel",
+    );
+  }
+
+  const itemsAvailable = Array.isArray(store.orderItems);
+  const items = itemsAvailable ? store.orderItems.filter((item) => item.orderId === order.id) : [];
+  const quantities = items.map((item) => Number(item.quantity));
+  const quantityAvailable = itemsAvailable && quantities.every((quantity) => Number.isSafeInteger(quantity) && quantity > 0);
+  const totalQuantity = quantityAvailable ? quantities.reduce((sum, quantity) => sum + quantity, 0) : null;
+  const methodLabel = getFulfillmentMethodLabel(order.fulfillmentMethod);
+  const statusLabel = getOrderStatusLabel(order.fulfillmentStatus);
+  const courier = displayText(order.courier, "Courier unavailable");
+  const tracking = displayText(order.trackingNumber, "Tracking not yet assigned");
+  const shipped = String(order.shippedAt || "").trim();
+
+  return modal(
+    `Shipping Label: ${escapeText(reference)}`,
+    `<div class="shipping-label-workspace">
+      <div class="modal-header order-details-header packing-header shipping-label-chrome">
+        <button class="icon-btn" type="button" data-back-to-order-details>Back</button>
+        <div><h2>Shipping Label / Shipment Summary</h2><p class="mono">${escapeText(reference)}</p></div>
+        <button class="icon-btn" type="button" data-close-order-details>Close</button>
+      </div>
+      <div class="shipping-label-actions shipping-label-chrome">
+        <p>Display-only shipment summary generated from loaded Order snapshots. This is not an official carrier label.</p>
+        <button class="primary-btn" type="button" data-print-shipping-label aria-label="${escapeText(`Print Shipping Label for ${reference}`)}">Print Shipping Label</button>
+      </div>
+      <article class="shipping-label-document" aria-label="${escapeText(`Shipping Label and Shipment Summary for ${reference}`)}">
+        <header class="shipping-label-brand-header">
+          <div><span class="shipping-label-mark" aria-hidden="true">NK</span><div><strong>Nana Kollects</strong><small>Shipping Label / Shipment Summary</small></div></div>
+          <div><span>Order Reference</span><strong class="mono shipping-label-reference">${escapeText(reference)}</strong><span class="pill ${getOrderStatusClass(order.fulfillmentStatus)}">${escapeText(statusLabel)}</span></div>
+        </header>
+        <section class="shipping-label-route" aria-label="Shipment route">
+          <div class="shipping-label-from">
+            <h3>Ship From</h3>
+            <strong>Nana Kollects</strong>
+            <p>Sender contact and address are not included because they are unavailable in established application configuration.</p>
+          </div>
+          <div class="shipping-label-recipient">
+            <h3>Ship To</h3>
+            <strong>${escapeText(order.customerName)}</strong>
+            <span>${escapeText(displayText(order.customerContact, "Contact number unavailable"))}</span>
+            <address>${escapeText(order.shippingAddress)}</address>
+          </div>
+        </section>
+        <section class="shipping-label-section" aria-label="Shipment details">
+          <h3>Shipment Details</h3>
+          <div class="shipping-label-details-grid">
+            ${shippingLabelValue("Fulfillment method", methodLabel, "Method unavailable")}
+            ${shippingLabelValue("Current status", statusLabel, "Status unavailable")}
+            ${shippingLabelValue("Courier", courier)}
+            ${shippingLabelValue("Tracking number", tracking)}
+            ${shippingLabelValue("Packed", formatCreatedAt(order.packedAt))}
+            ${shippingLabelValue("Shipped", formatCreatedAt(order.shippedAt))}
+            ${shippingLabelValue("Item lines", itemsAvailable ? items.length : "", "Unavailable")}
+            ${shippingLabelValue("Total quantity", totalQuantity === null ? "" : totalQuantity, "Unavailable")}
+            ${shippingLabelValue("Order reference", reference)}
+            ${shippingLabelValue("Shipping note", order.shippingNote, "No shipping note")}
+          </div>
+          ${!shipped ? `<p class="shipping-label-notice">Shipment not yet marked Shipped.</p>` : ""}
+          ${!String(order.courier || "").trim() ? `<p class="shipping-label-notice">Courier unavailable.</p>` : ""}
+          ${!String(order.trackingNumber || "").trim() ? `<p class="shipping-label-notice">Tracking not yet assigned.</p>` : ""}
+        </section>
+        <section class="shipping-label-section shipping-label-contents">
+          <div class="shipping-label-section-heading"><h3>Package Contents Summary</h3><strong>${escapeText(itemsAvailable ? `${items.length} ${items.length === 1 ? "line" : "lines"}` : "Unavailable")}</strong></div>
+          ${renderShippingLabelItems(items, itemsAvailable)}
+        </section>
+        <footer class="shipping-label-footer">
+          <strong class="mono">${escapeText(reference)}</strong>
+          <p>This shipment summary is generated from stored Order snapshots and is not an official carrier-generated label.</p>
+        </footer>
+      </article>
+    </div>`,
+    "order-details-panel shipping-label-panel",
+  );
+}
+
 function renderPackingItems(order, items, available, reference) {
   if (!available) return `<p class="order-details-unavailable">Order Items are unavailable in the current store.</p>`;
   if (!items.length) return `<p class="order-details-unavailable">No Order Items are recorded for this Order.</p>`;
@@ -923,6 +1085,7 @@ export function renderOrderDetailsWorkspace(store = {}, orderId = "") {
   const shippingWorkspaceAvailable = order.fulfillmentMethod !== FULFILLMENT_METHODS.PICKUP
     && [ORDER_STATUSES.PACKED, ORDER_STATUSES.SHIPPED].includes(order.fulfillmentStatus);
   const completionWorkspaceAvailable = [ORDER_STATUSES.SHIPPED, ORDER_STATUSES.COMPLETED].includes(order.fulfillmentStatus);
+  const shippingLabelAvailable = getShippingLabelAvailability(order).available;
 
   return modal(
     `Order Details: ${escapeText(reference)}`,
@@ -949,6 +1112,7 @@ export function renderOrderDetailsWorkspace(store = {}, orderId = "") {
       <div class="order-details-actions">
         <button class="primary-btn" type="button" data-open-order-summary>View Order Summary</button>
         <button class="primary-btn" type="button" data-open-packing-slip>View Packing Slip</button>
+        ${shippingLabelAvailable ? `<button class="primary-btn" type="button" data-open-shipping-label>View Shipping Label</button>` : ""}
         <button class="primary-btn" type="button" data-open-packing-workspace>View Packing Workspace</button>
         ${shippingWorkspaceAvailable ? `<button class="primary-btn" type="button" data-open-shipping-workspace>View Shipping Workspace</button>` : ""}
         ${completionWorkspaceAvailable ? `<button class="primary-btn" type="button" data-open-completion-workspace>View Completion Workspace</button>` : ""}
@@ -1086,6 +1250,8 @@ function openOrderDetails(root, store, orderId, trigger, notify, refresh, packin
             ? renderPackingSlipWorkspace(store, orderId)
             : view === "summary"
               ? renderOrderSummaryWorkspace(store, orderId)
+              : view === "label"
+                ? renderShippingLabelWorkspace(store, orderId)
               : renderOrderDetailsWorkspace(store, orderId);
     root.insertAdjacentHTML("beforeend", html);
     const panel = root.querySelector(".order-details-panel");
@@ -1098,6 +1264,7 @@ function openOrderDetails(root, store, orderId, trigger, notify, refresh, packin
     panel.querySelector("[data-open-completion-workspace]")?.addEventListener("click", () => show("completion"));
     panel.querySelector("[data-open-packing-slip]")?.addEventListener("click", () => show("slip"));
     panel.querySelector("[data-open-order-summary]")?.addEventListener("click", () => show("summary"));
+    panel.querySelector("[data-open-shipping-label]")?.addEventListener("click", () => show("label"));
     panel.querySelector("[data-back-to-order-details]")?.addEventListener("click", () => show("details", view));
     panel.querySelector("[data-print-packing-slip]")?.addEventListener("click", () => {
       document.body.classList.add("packing-slip-printing");
@@ -1113,6 +1280,14 @@ function openOrderDetails(root, store, orderId, trigger, notify, refresh, packin
         window.print();
       } finally {
         document.body.classList.remove("order-summary-printing");
+      }
+    });
+    panel.querySelector("[data-print-shipping-label]")?.addEventListener("click", () => {
+      document.body.classList.add("shipping-label-printing");
+      try {
+        window.print();
+      } finally {
+        document.body.classList.remove("shipping-label-printing");
       }
     });
     backdrop.addEventListener("click", (event) => {
@@ -1438,7 +1613,9 @@ function openOrderDetails(root, store, orderId, trigger, notify, refresh, packin
               ? panel.querySelector("[data-open-packing-slip]")
               : returnFocusTo === "summary"
                 ? panel.querySelector("[data-open-order-summary]")
-                : ["packing", "shipping", "completion", "slip", "summary"].includes(view)
+                : returnFocusTo === "label"
+                  ? panel.querySelector("[data-open-shipping-label]")
+                : ["packing", "shipping", "completion", "slip", "summary", "label"].includes(view)
                   ? panel.querySelector("[data-back-to-order-details]")
                   : panel.querySelector("[data-close-order-details]"));
     initialFocus?.focus();

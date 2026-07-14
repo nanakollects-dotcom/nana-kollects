@@ -134,6 +134,44 @@ export const PACKING_READINESS = {
   UNAVAILABLE: "unavailable",
 };
 
+export const PACKING_ITEM_STATES = {
+  UNCHECKED: "unchecked",
+  CHECKED: "checked",
+  NOT_REQUIRED: "not_required",
+  UNAVAILABLE: "unavailable",
+};
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isOrderEntityId(value) {
+  return UUID_PATTERN.test(String(value || "").trim());
+}
+
+export function getPackingItemState(item = {}) {
+  if (typeof item.packingRequired !== "boolean") return PACKING_ITEM_STATES.UNAVAILABLE;
+  if (item.packingRequired === false) return PACKING_ITEM_STATES.NOT_REQUIRED;
+
+  const hasCheckedAt = Boolean(String(item.checkedAt || "").trim());
+  const hasCheckedBy = Boolean(String(item.checkedBy || "").trim());
+  if (hasCheckedAt !== hasCheckedBy) return PACKING_ITEM_STATES.UNAVAILABLE;
+  return hasCheckedAt ? PACKING_ITEM_STATES.CHECKED : PACKING_ITEM_STATES.UNCHECKED;
+}
+
+export function canStartOrderPacking(order, items, collectionAvailable = Array.isArray(items)) {
+  if (!order || !isOrderEntityId(order.id)) return false;
+  if (normalizeOrderStatus(order.fulfillmentStatus) !== ORDER_STATUSES.READY_TO_PACK) return false;
+  if (!collectionAvailable || !Array.isArray(items)) return false;
+  return items.some((item) => item?.orderId === order.id && item?.packingRequired === true);
+}
+
+export function canToggleOrderPackingItem(order, item) {
+  if (!order || !item) return false;
+  if (!isOrderEntityId(order.id) || !isOrderEntityId(item.id)) return false;
+  if (normalizeOrderStatus(order.fulfillmentStatus) !== ORDER_STATUSES.PACKING) return false;
+  if (item.orderId !== order.id || item.packingRequired !== true) return false;
+  return getPackingItemState(item) !== PACKING_ITEM_STATES.UNAVAILABLE;
+}
+
 export function getPackingWorkspaceState(items, collectionAvailable = Array.isArray(items)) {
   if (!collectionAvailable || !Array.isArray(items)) {
     return {
@@ -156,8 +194,11 @@ export function getPackingWorkspaceState(items, collectionAvailable = Array.isAr
     const quantity = Number(item?.quantity);
     return !Number.isSafeInteger(quantity) || quantity <= 0;
   }).length;
-  const malformedPackingStateCount = items.filter((item) => typeof item?.packingRequired !== "boolean").length;
-  const checked = required.filter((item) => Boolean(item.checkedAt));
+  const malformedPackingStateCount = items.filter((item) => (
+    typeof item?.packingRequired !== "boolean"
+    || getPackingItemState(item) === PACKING_ITEM_STATES.UNAVAILABLE
+  )).length;
+  const checked = required.filter((item) => getPackingItemState(item) === PACKING_ITEM_STATES.CHECKED);
   const quantitiesAvailable = required.every((item) => {
     const quantity = Number(item.quantity);
     return Number.isSafeInteger(quantity) && quantity > 0;

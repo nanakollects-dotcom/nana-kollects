@@ -82,18 +82,36 @@ export async function getSupabaseOrders() {
 }
 
 async function runOrderOperation(operation) {
-  return runRepositoryOperation(async () => {
+  try {
     await operation();
-    return syncSupabaseStore();
-  });
+  } catch (error) {
+    console.error("Order mutation failed.");
+    const message = String(error?.message || error || "").toLowerCase();
+    if (message.includes("failed to fetch") || message.includes("network") || message.includes("timeout")) {
+      throw new Error("Unable to update this Order. Check your internet connection and try again.");
+    }
+    if (message.includes("jwt") || message.includes("session") || message.includes("not authenticated")) {
+      throw new Error("Your session expired. Please sign in again.");
+    }
+    throw new Error("Unable to update this Order. Refresh and try again.");
+  }
+
+  try {
+    return await syncSupabaseStore();
+  } catch (error) {
+    console.error("Order refresh failed after a successful mutation.");
+    const recoveryError = new Error("The change was saved, but the latest Order data could not be reloaded. Refresh the page to confirm it.");
+    recoveryError.mutationSucceeded = true;
+    throw recoveryError;
+  }
 }
 
 export function startOrderPacking(orderId) {
   return runOrderOperation(() => startSupabaseOrderPacking(orderId));
 }
 
-export function setOrderItemPacked(orderItemId, checked) {
-  return runOrderOperation(() => setSupabaseOrderItemPacked(orderItemId, checked));
+export function setOrderItemPacked(orderId, orderItemId, checked) {
+  return runOrderOperation(() => setSupabaseOrderItemPacked(orderId, orderItemId, checked));
 }
 
 export function markOrderPacked(orderId) {

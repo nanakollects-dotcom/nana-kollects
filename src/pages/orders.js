@@ -1,6 +1,9 @@
 import { emptyState, modal, pageHeader } from "../components/ui.js";
 import { formatMoney } from "../components/format.js";
+import { setOrderItemPacked, startOrderPacking } from "../services/repository.js";
 import {
+  canStartOrderPacking,
+  canToggleOrderPackingItem,
   filterOrders,
   formatOrderWaitingTime,
   FULFILLMENT_METHODS,
@@ -12,9 +15,11 @@ import {
   getOrderQueueMetrics,
   getOrderStatusClass,
   getOrderStatusLabel,
+  getPackingItemState,
   ORDER_QUEUE_FILTERS,
   ORDER_SORTS,
   ORDER_STATUSES,
+  PACKING_ITEM_STATES,
   PACKING_READINESS,
   sortOrders,
 } from "../core/orders.js";
@@ -25,6 +30,15 @@ let methodFilter = ORDER_QUEUE_FILTERS.ALL;
 let sortMode = ORDER_SORTS.PRIORITY;
 let metricFilter = "";
 let closeOrderDetailsModal = null;
+let activeOrderWorkspace = null;
+const pendingStartOrderIds = new Set();
+const pendingPackingItemIds = new Set();
+const packingFeedbackByOrder = new Map();
+
+const defaultPackingActions = {
+  setOrderItemPacked,
+  startOrderPacking,
+};
 
 function escapeText(value) {
   return String(value ?? "").replace(/[&<>"']/g, (character) => ({
@@ -189,13 +203,21 @@ function packingMetric(label, value) {
 }
 
 function packingStateForItem(item) {
-  if (item?.packingRequired === false) return { label: "No packing required", className: "muted-pill" };
-  if (item?.packingRequired !== true) return { label: "Packing state unknown", className: "gray-pill" };
-  if (item.checkedAt) return { label: "Checked", className: "green-pill" };
-  return { label: "Not checked", className: "yellow-pill" };
+  const state = getPackingItemState(item);
+  if (state === PACKING_ITEM_STATES.NOT_REQUIRED) return { state, label: "No packing required", className: "muted-pill" };
+  if (state === PACKING_ITEM_STATES.UNAVAILABLE) return { state, label: "Unavailable", className: "gray-pill" };
+  if (state === PACKING_ITEM_STATES.CHECKED) return { state, label: "Checked", className: "green-pill" };
+  return { state, label: "Unchecked", className: "yellow-pill" };
 }
 
-function renderPackingItems(items, available) {
+function renderPackingFeedback(orderId) {
+  const feedback = packingFeedbackByOrder.get(orderId);
+  if (!feedback) return "";
+  const role = feedback.tone === "error" || feedback.tone === "recovery" ? "alert" : "status";
+  return `<div class="packing-feedback packing-feedback-${feedback.tone}" role="${role}" aria-live="polite">${escapeText(feedback.message)}</div>`;
+}
+
+function renderPackingItems(order, items, available, reference) {
   if (!available) return `<p class="order-details-unavailable">Order Items are unavailable in the current store.</p>`;
   if (!items.length) return `<p class="order-details-unavailable">No Order Items are recorded for this Order.</p>`;
 
@@ -205,19 +227,29 @@ function renderPackingItems(items, available) {
         const quantity = Number(item.quantity);
         const validQuantity = Number.isSafeInteger(quantity) && quantity > 0;
         const state = packingStateForItem(item);
-        const checkedTimestamp = item.checkedAt
+        const saving = pendingPackingItemIds.has(item.id);
+        const interactive = canToggleOrderPackingItem(order, item);
+        const checked = state.state === PACKING_ITEM_STATES.CHECKED;
+        const itemName = displayText(item.itemName, "Item name unavailable");
+        const checkedTimestamp = checked
           ? formatCreatedAt(item.checkedAt)
           : item.packingRequired === true
-            ? "Not checked"
+            ? state.state === PACKING_ITEM_STATES.UNAVAILABLE ? "Unavailable" : "Not checked"
             : "Not applicable";
+        const controlLabel = `${checked ? "Uncheck" : "Check"} ${itemName}, quantity ${validQuantity ? quantity : "unavailable"}, for ${reference}`;
         return `
-          <article class="packing-item">
+          <article class="packing-item ${saving ? "is-saving" : ""}" ${saving ? 'aria-busy="true"' : ""}>
             <div class="packing-item-main">
               <div>
-                <strong>${escapeText(displayText(item.itemName, "Item name unavailable"))}</strong>
+                <strong>${escapeText(itemName)}</strong>
                 <span class="mono">${escapeText(displayText(item.sku, "SKU unavailable"))}</span>
               </div>
-              <span class="pill ${state.className}">${escapeText(state.label)}</span>
+              ${interactive ? `
+                <label class="packing-check-control">
+                  <input type="checkbox" data-packing-item-toggle="${escapeText(item.id)}" ${checked ? "checked" : ""} ${saving ? "disabled" : ""} aria-label="${escapeText(controlLabel)}" />
+                  <span>${escapeText(saving ? "Saving..." : state.label)}</span>
+                </label>
+              ` : `<span class="pill ${state.className}">${escapeText(state.label)}</span>`}
             </div>
             <div class="packing-item-meta">
               <span>Quantity <strong>${escapeText(validQuantity ? quantity : "Unavailable")}</strong></span>
@@ -279,6 +311,23 @@ export function renderPackingWorkspace(store = {}, orderId = "") {
   const readiness = PACKING_READINESS_LABELS[summary.readiness] || PACKING_READINESS_LABELS[PACKING_READINESS.UNAVAILABLE];
   const methodLabel = getFulfillmentMethodLabel(order.fulfillmentMethod);
   const progressPercent = summary.percent ?? 0;
+  const startEligible = canStartOrderPacking(order, items, itemStoreAvailable);
+  const startPending = pendingStartOrderIds.has(order.id);
+  const status = String(order.fulfillmentStatus || "");
+  const actionCopy = status === ORDER_STATUSES.PACKING
+    ? "Checklist changes save to this Order and refresh from the server."
+    : startEligible
+      ? "Start packing when you are ready to work through the required checklist."
+      : status === ORDER_STATUSES.READY_TO_PACK
+        ? "Packing cannot start until the required Order Items are available."
+        : "Packing actions are unavailable for this Order status.";
+  const startAction = startEligible ? `
+    <div class="packing-start-action">
+      <button class="primary-btn" type="button" data-start-order-packing ${startPending ? "disabled" : ""} aria-label="${escapeText(`${startPending ? "Starting packing" : "Start Packing"} for ${reference}`)}">
+        ${startPending ? "Starting packing..." : "Start Packing"}
+      </button>
+    </div>
+  ` : "";
 
   return modal(
     `Packing Workspace: ${escapeText(reference)}`,
@@ -291,8 +340,10 @@ export function renderPackingWorkspace(store = {}, orderId = "") {
       <section class="packing-hero" aria-label="Packing workspace summary">
         <div><strong>${escapeText(displayText(order.customerName, "Customer unavailable"))}</strong><span class="pill ${getOrderStatusClass(order.fulfillmentStatus)}">${escapeText(getOrderStatusLabel(order.fulfillmentStatus))}</span></div>
         <div><span>${escapeText(methodLabel)}</span><strong>${escapeText(formatOrderWaitingTime(order.createdAt))}</strong></div>
-        <p>Packing actions are not yet enabled. This workspace is read-only.</p>
+        <p>${escapeText(actionCopy)}</p>
       </section>
+      ${renderPackingFeedback(order.id)}
+      ${startAction}
       <section class="modal-section">
         <div class="order-details-section-heading"><h3>Packing Summary</h3><strong>${escapeText(readiness)}</strong></div>
         <div class="packing-summary-grid">
@@ -305,8 +356,8 @@ export function renderPackingWorkspace(store = {}, orderId = "") {
         </div>
         <div class="packing-progress" aria-label="${escapeText(summary.percent === null ? "Packing progress unavailable" : `Packing progress ${summary.percent}%`)}"><span><i style="width: ${progressPercent}%"></i></span></div>
       </section>
-      <section class="modal-section"><h3>Packing Items</h3>${renderPackingItems(items, itemStoreAvailable)}</section>
-      <section class="modal-section packing-readiness"><h3>Packing Readiness</h3><strong>${escapeText(readiness)}</strong><p>Derived from the currently loaded Order Item snapshots. No Order status has been changed.</p></section>
+      <section class="modal-section"><h3>Packing Items</h3>${renderPackingItems(order, items, itemStoreAvailable, reference)}</section>
+      <section class="modal-section packing-readiness"><h3>Packing Readiness</h3><strong>${escapeText(readiness)}</strong><p>Calculated from persisted checklist values after store reconciliation.</p></section>
       <section class="modal-section"><h3>Exceptions and Attention</h3>${warnings.length ? `<ul class="packing-warnings">${warnings.map((warning) => `<li>${escapeText(warning)}</li>`).join("")}</ul>` : `<p class="packing-clear">No packing exceptions were detected in the loaded data.</p>`}</section>
       <section class="modal-section"><h3>Order Context</h3><div class="order-detail-grid">
         ${renderDetailValue("Customer contact", order.customerContact, "No contact number")}
@@ -433,14 +484,43 @@ export function renderOrderDetailsWorkspace(store = {}, orderId = "") {
   );
 }
 
-function openOrderDetails(root, store, orderId, trigger) {
-  closeOrderDetailsModal?.(false);
+function findOrderTrigger(root, orderId) {
+  return Array.from(root.querySelectorAll("[data-order-action]"))
+    .find((button) => button.dataset.orderAction === orderId) || null;
+}
+
+function packingFailureFeedback(error) {
+  if (error?.mutationSucceeded) {
+    return {
+      tone: "recovery",
+      message: "The change was saved, but refreshed Order data is unavailable. Refresh the page to confirm it before trying again.",
+    };
+  }
+  return {
+    tone: "error",
+    message: "Unable to update this Order. Refresh and try again.",
+  };
+}
+
+function openOrderDetails(root, store, orderId, trigger, notify, refresh, packingActions = defaultPackingActions, initialView = "details") {
+  const resuming = activeOrderWorkspace?.orderId === orderId;
+  closeOrderDetailsModal?.(false, resuming);
+  activeOrderWorkspace = {
+    orderId,
+    view: initialView,
+    focus: resuming ? activeOrderWorkspace?.focus || null : null,
+  };
   let backdrop = null;
-  const close = (restoreFocus = true) => {
+  const close = (restoreFocus = true, preserveSession = false) => {
     document.removeEventListener("keydown", onKeydown);
     backdrop?.remove();
-    closeOrderDetailsModal = null;
-    if (restoreFocus && trigger?.isConnected) trigger.focus();
+    if (closeOrderDetailsModal === close) closeOrderDetailsModal = null;
+    if (!preserveSession) {
+      activeOrderWorkspace = null;
+      packingFeedbackByOrder.delete(orderId);
+    }
+    const focusTarget = trigger?.isConnected ? trigger : findOrderTrigger(root, orderId);
+    if (restoreFocus && focusTarget?.isConnected) focusTarget.focus();
   };
   const onKeydown = (event) => {
     if (event.key === "Escape") {
@@ -449,7 +529,7 @@ function openOrderDetails(root, store, orderId, trigger) {
       return;
     }
     if (event.key === "Tab") {
-      const focusable = Array.from(backdrop?.querySelectorAll("button:not([disabled])") || []);
+      const focusable = Array.from(backdrop?.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])') || []);
       if (!focusable.length) return;
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
@@ -464,6 +544,7 @@ function openOrderDetails(root, store, orderId, trigger) {
   };
 
   const show = (view, returnFocusToPackingButton = false) => {
+    if (activeOrderWorkspace?.orderId === orderId) activeOrderWorkspace.view = view;
     backdrop?.remove();
     const html = view === "packing"
       ? renderPackingWorkspace(store, orderId)
@@ -480,17 +561,109 @@ function openOrderDetails(root, store, orderId, trigger) {
       if (event.target === backdrop) close();
     });
 
-    const initialFocus = returnFocusToPackingButton
+    panel.querySelector("[data-start-order-packing]")?.addEventListener("click", async () => {
+      const order = Array.isArray(store.orders) ? store.orders.find((entry) => entry.id === orderId) : null;
+      const itemsAvailable = Array.isArray(store.orderItems);
+      const items = itemsAvailable ? store.orderItems.filter((item) => item.orderId === orderId) : [];
+      if (pendingStartOrderIds.has(orderId) || !canStartOrderPacking(order, items, itemsAvailable)) return;
+
+      pendingStartOrderIds.add(orderId);
+      if (activeOrderWorkspace?.orderId === orderId) activeOrderWorkspace.focus = { kind: "start" };
+      packingFeedbackByOrder.set(orderId, { tone: "pending", message: "Starting packing..." });
+      show("packing");
+
+      try {
+        const syncedStore = await packingActions.startOrderPacking(orderId);
+        const savedOrder = Array.isArray(syncedStore?.orders)
+          ? syncedStore.orders.find((entry) => entry.id === orderId)
+          : null;
+        if (savedOrder?.fulfillmentStatus !== ORDER_STATUSES.PACKING) {
+          packingFeedbackByOrder.set(orderId, {
+            tone: "recovery",
+            message: "Packing may have started, but the persisted status could not be confirmed. Refresh the page before trying again.",
+          });
+          notify("Packing status needs confirmation. Refresh the page.", true);
+        } else {
+          packingFeedbackByOrder.set(orderId, { tone: "success", message: "Packing started. The persisted checklist is now available." });
+          notify("Packing started.");
+        }
+      } catch (error) {
+        const feedback = packingFailureFeedback(error);
+        packingFeedbackByOrder.set(orderId, feedback);
+        notify(feedback.message, true);
+      } finally {
+        pendingStartOrderIds.delete(orderId);
+        if (closeOrderDetailsModal === close && !backdrop?.isConnected) close(false);
+        if (activeOrderWorkspace?.orderId !== orderId) packingFeedbackByOrder.delete(orderId);
+        refresh();
+      }
+    });
+
+    panel.querySelectorAll("[data-packing-item-toggle]").forEach((checkbox) => {
+      checkbox.addEventListener("change", async () => {
+        const itemId = checkbox.dataset.packingItemToggle;
+        const order = Array.isArray(store.orders) ? store.orders.find((entry) => entry.id === orderId) : null;
+        const item = Array.isArray(store.orderItems) ? store.orderItems.find((entry) => entry.id === itemId) : null;
+        if (pendingPackingItemIds.has(itemId) || !canToggleOrderPackingItem(order, item)) {
+          show("packing");
+          return;
+        }
+
+        const checked = checkbox.checked;
+        pendingPackingItemIds.add(itemId);
+        if (activeOrderWorkspace?.orderId === orderId) activeOrderWorkspace.focus = { kind: "item", itemId };
+        packingFeedbackByOrder.set(orderId, { tone: "pending", message: "Saving checklist item..." });
+        show("packing");
+
+        try {
+          const syncedStore = await packingActions.setOrderItemPacked(orderId, itemId, checked);
+          const savedOrder = Array.isArray(syncedStore?.orders)
+            ? syncedStore.orders.find((entry) => entry.id === orderId)
+            : null;
+          const savedItem = Array.isArray(syncedStore?.orderItems)
+            ? syncedStore.orderItems.find((entry) => entry.id === itemId && entry.orderId === orderId)
+            : null;
+          const persistedChecked = getPackingItemState(savedItem) === PACKING_ITEM_STATES.CHECKED;
+          if (savedOrder?.fulfillmentStatus !== ORDER_STATUSES.PACKING || !savedItem || persistedChecked !== checked) {
+            packingFeedbackByOrder.set(orderId, {
+              tone: "recovery",
+              message: "The checklist change may have saved, but the persisted state could not be confirmed. Refresh the page before trying again.",
+            });
+            notify("Checklist state needs confirmation. Refresh the page.", true);
+          } else {
+            packingFeedbackByOrder.set(orderId, { tone: "success", message: "Checklist item saved and confirmed." });
+            notify("Checklist item saved.");
+          }
+        } catch (error) {
+          const feedback = packingFailureFeedback(error);
+          packingFeedbackByOrder.set(orderId, feedback);
+          notify(feedback.message, true);
+        } finally {
+          pendingPackingItemIds.delete(itemId);
+          if (closeOrderDetailsModal === close && !backdrop?.isConnected) close(false);
+          if (activeOrderWorkspace?.orderId !== orderId) packingFeedbackByOrder.delete(orderId);
+          refresh();
+        }
+      });
+    });
+
+    const rememberedFocus = activeOrderWorkspace?.orderId === orderId ? activeOrderWorkspace.focus : null;
+    const rememberedItem = rememberedFocus?.kind === "item"
+      ? Array.from(panel.querySelectorAll("[data-packing-item-toggle]")).find((control) => control.dataset.packingItemToggle === rememberedFocus.itemId)
+      : null;
+    const initialFocus = rememberedItem
+      || (rememberedFocus?.kind === "start" ? panel.querySelector("[data-start-order-packing]") || panel.querySelector("[data-packing-item-toggle]") : null)
+      || (returnFocusToPackingButton
       ? panel.querySelector("[data-open-packing-workspace]")
       : view === "packing"
         ? panel.querySelector("[data-back-to-order-details]")
-        : panel.querySelector("[data-close-order-details]");
+        : panel.querySelector("[data-close-order-details]"));
     initialFocus?.focus();
   };
 
   document.addEventListener("keydown", onKeydown);
   closeOrderDetailsModal = close;
-  show("details");
+  show(initialView);
 }
 
 function emptyOrdersState(allOrders, visibleOrders) {
@@ -627,10 +800,10 @@ export function renderOrdersPage(store = {}) {
   `;
 }
 
-export function bindOrdersPage(root, store, notify, refresh) {
+export function bindOrdersPage(root, store, notify, refresh, packingActions = defaultPackingActions) {
   const bindOrderActions = () => {
     root.querySelectorAll("[data-order-action]").forEach((button) => {
-      button.addEventListener("click", () => openOrderDetails(root, store, button.dataset.orderAction, button));
+      button.addEventListener("click", () => openOrderDetails(root, store, button.dataset.orderAction, button, notify, refresh, packingActions));
     });
   };
 
@@ -667,4 +840,9 @@ export function bindOrdersPage(root, store, notify, refresh) {
   });
 
   bindOrderActions();
+
+  if (activeOrderWorkspace) {
+    const { orderId, view } = activeOrderWorkspace;
+    openOrderDetails(root, store, orderId, findOrderTrigger(root, orderId), notify, refresh, packingActions, view);
+  }
 }

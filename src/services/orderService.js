@@ -99,8 +99,9 @@ export function startSupabaseOrderPacking(orderId) {
   return runOrderRpc("start_order_packing", { p_order_id: orderId });
 }
 
-export function setSupabaseOrderItemPacked(orderItemId, checked) {
+export function setSupabaseOrderItemPacked(orderId, orderItemId, checked) {
   return runOrderRpc("set_order_item_packed", {
+    p_order_id: orderId,
     p_order_item_id: orderItemId,
     p_checked: typeof checked === "boolean" ? checked : null,
   });

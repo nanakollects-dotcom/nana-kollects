@@ -120,9 +120,20 @@ set local role authenticated;
 select public.start_order_packing(
   (select id from public.orders where source_payment_request_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1')
 );
-select public.start_order_packing(
-  (select id from public.orders where source_payment_request_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1')
-);
+
+do $$
+begin
+  begin
+    perform public.start_order_packing(
+      (select id from public.orders where source_payment_request_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1')
+    );
+    raise exception 'Already-packing Order unexpectedly started again.';
+  exception
+    when raise_exception then
+      if sqlerrm <> 'Only Ready to Pack Orders can start packing.' then raise; end if;
+  end;
+end;
+$$;
 
 do $$
 declare
@@ -139,6 +150,7 @@ end;
 $$;
 
 select public.set_order_item_packed(
+  (select id from public.orders where source_payment_request_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1'),
   (select oi.id from public.order_items oi join public.orders o on o.id = oi.order_id where o.source_payment_request_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1'),
   true
 );
@@ -159,23 +171,26 @@ end;
 $$;
 
 select public.set_order_item_packed(
+  (select id from public.orders where source_payment_request_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1'),
   (select oi.id from public.order_items oi join public.orders o on o.id = oi.order_id where o.source_payment_request_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1'),
   true
 );
 select public.set_order_item_packed(
+  (select id from public.orders where source_payment_request_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1'),
   (select oi.id from public.order_items oi join public.orders o on o.id = oi.order_id where o.source_payment_request_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1'),
   false
 );
 
 do $$
 begin
-  if (select fulfillment_status from public.orders where source_payment_request_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1') <> 'ready_to_pack' then
-    raise exception 'Clearing all checks did not return the Order to Ready to Pack.';
+  if (select fulfillment_status from public.orders where source_payment_request_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1') <> 'packing' then
+    raise exception 'Checklist mutation unexpectedly changed the Order lifecycle status.';
   end if;
 end;
 $$;
 
 select public.set_order_item_packed(
+  (select id from public.orders where source_payment_request_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1'),
   (select oi.id from public.order_items oi join public.orders o on o.id = oi.order_id where o.source_payment_request_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1'),
   true
 );
@@ -311,7 +326,7 @@ declare
   );
 begin
   begin
-    perform public.set_order_item_packed(v_item_id, false);
+    perform public.set_order_item_packed(v_order_id, v_item_id, false);
     raise exception 'Completed Order checklist unexpectedly changed.';
   exception
     when raise_exception then
@@ -348,7 +363,11 @@ begin
 end;
 $$;
 
+select public.start_order_packing(
+  (select id from public.orders where source_payment_request_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb4')
+);
 select public.set_order_item_packed(
+  (select id from public.orders where source_payment_request_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb4'),
   (select oi.id from public.order_items oi join public.orders o on o.id = oi.order_id where o.source_payment_request_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb4'),
   true
 );
@@ -432,7 +451,7 @@ begin
     or (select count(*) from public.order_fulfillment_events e join public.orders o on o.id = e.order_id where o.source_payment_request_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb5') <> 1 then
     raise exception 'Injected event failure did not roll back status and event atomically.';
   end if;
-  if (select count(*) from public.order_fulfillment_events e join public.orders o on o.id = e.order_id where o.source_payment_request_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1') <> 10 then
+  if (select count(*) from public.order_fulfillment_events e join public.orders o on o.id = e.order_id where o.source_payment_request_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1') <> 7 then
     raise exception 'Shipment transition retries wrote an unexpected number of events.';
   end if;
   if (select count(*) from public.order_fulfillment_events e join public.orders o on o.id = e.order_id where o.source_payment_request_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb4') <> 4 then
@@ -446,6 +465,8 @@ begin
   end if;
   if has_function_privilege('anon', 'public.start_order_packing(uuid)', 'EXECUTE')
     or has_function_privilege('anon', 'public.set_order_item_packed(uuid,boolean)', 'EXECUTE')
+    or has_function_privilege('authenticated', 'public.set_order_item_packed(uuid,boolean)', 'EXECUTE')
+    or not has_function_privilege('authenticated', 'public.set_order_item_packed(uuid,uuid,boolean)', 'EXECUTE')
     or not has_function_privilege('authenticated', 'public.mark_order_packed(uuid)', 'EXECUTE')
     or not has_function_privilege('authenticated', 'public.mark_order_shipped(uuid,text,text,text,timestamp with time zone,text)', 'EXECUTE') then
     raise exception 'Lifecycle RPC execution grants are incorrect.';
@@ -459,7 +480,7 @@ do $$
 begin
   if (select count(*) from public.orders) <> 3
     or (select count(*) from public.order_items) <> 3
-    or (select count(*) from public.order_fulfillment_events) <> 15 then
+    or (select count(*) from public.order_fulfillment_events) <> 12 then
     raise exception 'RLS exposed another user''s Order domain rows.';
   end if;
 

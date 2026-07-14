@@ -445,3 +445,24 @@ export function validateOrderShipping(order = {}, input = {}) {
 export function canMarkOrderShipped(order, input = {}) {
   return Object.keys(validateOrderShipping(order, input)).length === 0;
 }
+
+export function validateOrderCompletion(order = {}, input = {}) {
+  const errors = {};
+  const completedAt = new Date(input.completedAt || "");
+  const shippedAt = new Date(order.shippedAt || "");
+
+  if (!isOrderEntityId(order.id) || normalizeOrderStatus(order.fulfillmentStatus) !== ORDER_STATUSES.SHIPPED) {
+    errors.fulfillmentStatus = "Only Shipped Orders can be marked Completed.";
+  }
+  if (Number.isNaN(completedAt.getTime())) {
+    errors.completedAt = "Completion date and time are required.";
+  } else if (Number.isNaN(shippedAt.getTime()) || completedAt < shippedAt) {
+    errors.completedAt = "Completion date and time cannot be before shipping.";
+  }
+
+  return errors;
+}
+
+export function canMarkOrderCompleted(order, input = {}) {
+  return Object.keys(validateOrderCompletion(order, input)).length === 0;
+}

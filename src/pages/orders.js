@@ -1,7 +1,8 @@
 import { emptyState, modal, pageHeader } from "../components/ui.js";
 import { formatMoney } from "../components/format.js";
-import { markOrderPacked, markOrderShipped, setOrderItemPacked, startOrderPacking } from "../services/repository.js";
+import { markOrderCompleted, markOrderPacked, markOrderShipped, setOrderItemPacked, startOrderPacking } from "../services/repository.js";
 import {
+  canMarkOrderCompleted,
   canMarkOrderPacked,
   canMarkOrderShipped,
   canStartOrderPacking,
@@ -38,11 +39,14 @@ const pendingStartOrderIds = new Set();
 const pendingPackingItemIds = new Set();
 const pendingMarkPackedOrderIds = new Set();
 const pendingMarkShippedOrderIds = new Set();
+const pendingMarkCompletedOrderIds = new Set();
 const packingFeedbackByOrder = new Map();
 const shippingFeedbackByOrder = new Map();
+const completionFeedbackByOrder = new Map();
 const shippingDraftByOrder = new Map();
 
 const defaultPackingActions = {
+  markOrderCompleted,
   markOrderPacked,
   markOrderShipped,
   setOrderItemPacked,
@@ -324,6 +328,69 @@ export function renderShippingWorkspace(store = {}, orderId = "") {
   );
 }
 
+function renderCompletionFeedback(orderId) {
+  const feedback = completionFeedbackByOrder.get(orderId);
+  if (!feedback) return "";
+  const role = feedback.tone === "error" || feedback.tone === "recovery" ? "alert" : "status";
+  return `<div class="packing-feedback packing-feedback-${feedback.tone}" role="${role}" aria-live="polite">${escapeText(feedback.message)}</div>`;
+}
+
+export function renderCompletionWorkspace(store = {}, orderId = "") {
+  const order = Array.isArray(store.orders) ? store.orders.find((entry) => entry.id === orderId) : null;
+  if (!order) {
+    return modal(
+      "Complete Order",
+      `<div class="completion-workspace"><div class="modal-header order-details-header packing-header"><button class="icon-btn" type="button" data-back-to-order-details>Back</button><div><h2>Complete Order</h2><p>Order reference unavailable</p></div><button class="icon-btn" type="button" data-close-order-details>Close</button></div><section class="modal-section">${emptyState("Order not found", "This Order is no longer available in the loaded store.")}</section></div>`,
+      "order-details-panel completion-workspace-panel",
+    );
+  }
+
+  const reference = displayText(order.orderNumber, "Order reference unavailable");
+  const pending = pendingMarkCompletedOrderIds.has(order.id);
+  const eligible = canMarkOrderCompleted(order, { completedAt: new Date().toISOString() });
+  const completed = order.fulfillmentStatus === ORDER_STATUSES.COMPLETED;
+  const eventsAvailable = Array.isArray(store.orderEvents);
+  const events = eventsAvailable ? store.orderEvents.filter((event) => event.orderId === order.id) : [];
+  const stateCopy = completed
+    ? "This Order is permanently completed. Fulfillment history remains read-only."
+    : eligible
+      ? "Confirm that fulfillment is finished before permanently completing this Order."
+      : "Completion is unavailable until the Order has been shipped.";
+
+  return modal(
+    `Complete Order: ${escapeText(reference)}`,
+    `<div class="completion-workspace">
+      <div class="modal-header order-details-header packing-header">
+        <button class="icon-btn" type="button" data-back-to-order-details>Back</button>
+        <div><h2>Complete Order</h2><p class="mono">${escapeText(reference)}</p></div>
+        <button class="icon-btn" type="button" data-close-order-details>Close</button>
+      </div>
+      <section class="packing-hero" aria-label="Completion workspace summary">
+        <div><strong>${escapeText(displayText(order.customerName, "Customer unavailable"))}</strong><span class="pill ${getOrderStatusClass(order.fulfillmentStatus)}">${escapeText(getOrderStatusLabel(order.fulfillmentStatus))}</span></div>
+        <div><span>${escapeText(getFulfillmentMethodLabel(order.fulfillmentMethod))}</span><strong>Shipped ${escapeText(formatCreatedAt(order.shippedAt))}</strong></div>
+        <p>${escapeText(stateCopy)}</p>
+      </section>
+      ${renderCompletionFeedback(order.id)}
+      <section class="modal-section">
+        <div class="order-details-section-heading"><h3>Finalization</h3><strong>${escapeText(completed ? "Completed" : eligible ? "Ready to complete" : "Not eligible")}</strong></div>
+        <p>${escapeText(completed ? "No further fulfillment actions are available." : "Mark Completed is final and cannot be undone from this workspace.")}</p>
+      </section>
+      ${eligible || pending ? `<div class="packing-start-action completion-submit-action">
+        <button class="primary-btn" type="button" data-mark-order-completed ${pending ? "disabled" : ""} ${pending ? 'aria-busy="true"' : ""} aria-label="${escapeText(`${pending ? "Marking Completed" : "Mark Completed"} for ${reference}`)}">${pending ? "Marking Completed..." : "Mark Completed"}</button>
+      </div>` : ""}
+      <section class="modal-section"><h3>Fulfillment Record</h3><div class="order-detail-grid">
+        ${renderDetailValue("Shipped", formatCreatedAt(order.shippedAt))}
+        ${renderDetailValue("Completed", formatCreatedAt(order.completedAt))}
+        ${renderDetailValue("Courier", order.courier, "Not assigned")}
+        ${renderDetailValue("Tracking number", order.trackingNumber, "Not assigned")}
+        ${renderLatestEvent(events, eventsAvailable)}
+      </div></section>
+      <section class="modal-section"><h3>Fulfillment Timeline</h3>${renderOrderTimeline(events, eventsAvailable)}</section>
+    </div>`,
+    "order-details-panel completion-workspace-panel",
+  );
+}
+
 function renderPackingItems(order, items, available, reference) {
   if (!available) return `<p class="order-details-unavailable">Order Items are unavailable in the current store.</p>`;
   if (!items.length) return `<p class="order-details-unavailable">No Order Items are recorded for this Order.</p>`;
@@ -521,6 +588,7 @@ export function renderOrderDetailsWorkspace(store = {}, orderId = "") {
   const methodLabel = getFulfillmentMethodLabel(order.fulfillmentMethod);
   const shippingWorkspaceAvailable = order.fulfillmentMethod !== FULFILLMENT_METHODS.PICKUP
     && [ORDER_STATUSES.PACKED, ORDER_STATUSES.SHIPPED].includes(order.fulfillmentStatus);
+  const completionWorkspaceAvailable = [ORDER_STATUSES.SHIPPED, ORDER_STATUSES.COMPLETED].includes(order.fulfillmentStatus);
 
   return modal(
     `Order Details: ${escapeText(reference)}`,
@@ -547,6 +615,7 @@ export function renderOrderDetailsWorkspace(store = {}, orderId = "") {
       <div class="order-details-actions">
         <button class="primary-btn" type="button" data-open-packing-workspace>View Packing Workspace</button>
         ${shippingWorkspaceAvailable ? `<button class="primary-btn" type="button" data-open-shipping-workspace>View Shipping Workspace</button>` : ""}
+        ${completionWorkspaceAvailable ? `<button class="primary-btn" type="button" data-open-completion-workspace>View Completion Workspace</button>` : ""}
       </div>
 
       <section class="modal-section">
@@ -641,6 +710,7 @@ function openOrderDetails(root, store, orderId, trigger, notify, refresh, packin
       activeOrderWorkspace = null;
       packingFeedbackByOrder.delete(orderId);
       shippingFeedbackByOrder.delete(orderId);
+      completionFeedbackByOrder.delete(orderId);
       shippingDraftByOrder.delete(orderId);
     }
     const focusTarget = trigger?.isConnected ? trigger : findOrderTrigger(root, orderId);
@@ -674,7 +744,9 @@ function openOrderDetails(root, store, orderId, trigger, notify, refresh, packin
       ? renderPackingWorkspace(store, orderId)
       : view === "shipping"
         ? renderShippingWorkspace(store, orderId)
-        : renderOrderDetailsWorkspace(store, orderId);
+        : view === "completion"
+          ? renderCompletionWorkspace(store, orderId)
+          : renderOrderDetailsWorkspace(store, orderId);
     root.insertAdjacentHTML("beforeend", html);
     const panel = root.querySelector(".order-details-panel");
     backdrop = panel?.closest(".modal-backdrop") || null;
@@ -683,6 +755,7 @@ function openOrderDetails(root, store, orderId, trigger, notify, refresh, packin
     panel.querySelector("[data-close-order-details]")?.addEventListener("click", () => close());
     panel.querySelector("[data-open-packing-workspace]")?.addEventListener("click", () => show("packing"));
     panel.querySelector("[data-open-shipping-workspace]")?.addEventListener("click", () => show("shipping"));
+    panel.querySelector("[data-open-completion-workspace]")?.addEventListener("click", () => show("completion"));
     panel.querySelector("[data-back-to-order-details]")?.addEventListener("click", () => show("details", view));
     backdrop.addEventListener("click", (event) => {
       if (event.target === backdrop) close();
@@ -886,6 +959,60 @@ function openOrderDetails(root, store, orderId, trigger, notify, refresh, packin
       }
     });
 
+    panel.querySelector("[data-mark-order-completed]")?.addEventListener("click", async () => {
+      const order = Array.isArray(store.orders) ? store.orders.find((entry) => entry.id === orderId) : null;
+      const input = { completedAt: new Date().toISOString(), note: "" };
+      if (pendingMarkCompletedOrderIds.has(orderId) || !canMarkOrderCompleted(order, input)) return;
+
+      const previousEventIds = new Set(
+        (Array.isArray(store.orderEvents) ? store.orderEvents : [])
+          .filter((event) => event.orderId === orderId)
+          .map((event) => event.id),
+      );
+      pendingMarkCompletedOrderIds.add(orderId);
+      if (activeOrderWorkspace?.orderId === orderId) activeOrderWorkspace.focus = { kind: "mark-completed" };
+      completionFeedbackByOrder.set(orderId, { tone: "pending", message: "Marking this Order Completed..." });
+      show("completion");
+
+      try {
+        const syncedStore = await packingActions.markOrderCompleted(orderId, input);
+        const savedOrder = Array.isArray(syncedStore?.orders)
+          ? syncedStore.orders.find((entry) => entry.id === orderId)
+          : null;
+        const newCompletedEvents = Array.isArray(syncedStore?.orderEvents)
+          ? syncedStore.orderEvents.filter((event) => (
+            event.orderId === orderId
+            && event.fromStatus === ORDER_STATUSES.SHIPPED
+            && event.toStatus === ORDER_STATUSES.COMPLETED
+            && !previousEventIds.has(event.id)
+          ))
+          : [];
+        const completedAt = new Date(savedOrder?.completedAt || "");
+        const persisted = savedOrder?.fulfillmentStatus === ORDER_STATUSES.COMPLETED
+          && !Number.isNaN(completedAt.getTime())
+          && newCompletedEvents.length === 1;
+        if (!persisted) {
+          completionFeedbackByOrder.set(orderId, {
+            tone: "recovery",
+            message: "The Completed transition may have saved, but the persisted lifecycle state could not be confirmed. Refresh the page before trying again.",
+          });
+          notify("Completed status needs confirmation. Refresh the page.", true);
+        } else {
+          completionFeedbackByOrder.set(orderId, { tone: "success", message: "Order marked Completed and confirmed." });
+          notify("Order marked Completed.");
+        }
+      } catch (error) {
+        const feedback = packingFailureFeedback(error);
+        completionFeedbackByOrder.set(orderId, feedback);
+        notify(feedback.message, true);
+      } finally {
+        pendingMarkCompletedOrderIds.delete(orderId);
+        if (closeOrderDetailsModal === close && !backdrop?.isConnected) close(false);
+        if (activeOrderWorkspace?.orderId !== orderId) completionFeedbackByOrder.delete(orderId);
+        refresh();
+      }
+    });
+
     panel.querySelectorAll("[data-packing-item-toggle]").forEach((checkbox) => {
       checkbox.addEventListener("change", async () => {
         const itemId = checkbox.dataset.packingItemToggle;
@@ -942,13 +1069,16 @@ function openOrderDetails(root, store, orderId, trigger, notify, refresh, packin
       || (rememberedFocus?.kind === "start" ? panel.querySelector("[data-start-order-packing]") || panel.querySelector("[data-packing-item-toggle]") : null)
       || (rememberedFocus?.kind === "mark-packed" ? panel.querySelector("[data-mark-order-packed]") || panel.querySelector("[data-back-to-order-details]") : null)
       || (rememberedFocus?.kind === "mark-shipped" ? panel.querySelector("[data-mark-order-shipped]") || panel.querySelector("[data-back-to-order-details]") : null)
+      || (rememberedFocus?.kind === "mark-completed" ? panel.querySelector("[data-mark-order-completed]") || panel.querySelector("[data-back-to-order-details]") : null)
       || (returnFocusTo === "packing"
         ? panel.querySelector("[data-open-packing-workspace]")
         : returnFocusTo === "shipping"
           ? panel.querySelector("[data-open-shipping-workspace]")
-          : ["packing", "shipping"].includes(view)
-            ? panel.querySelector("[data-back-to-order-details]")
-            : panel.querySelector("[data-close-order-details]"));
+          : returnFocusTo === "completion"
+            ? panel.querySelector("[data-open-completion-workspace]")
+            : ["packing", "shipping", "completion"].includes(view)
+              ? panel.querySelector("[data-back-to-order-details]")
+              : panel.querySelector("[data-close-order-details]"));
     initialFocus?.focus();
   };
 

@@ -1055,7 +1055,8 @@ button:disabled {
   padding: 16px;
 }
 
-.shipping-workspace {
+.shipping-workspace,
+.completion-workspace {
   display: grid;
   gap: 12px;
   padding: 16px;
@@ -1115,7 +1116,8 @@ button:disabled {
   grid-column: 1 / -1;
 }
 
-.shipping-submit-action {
+.shipping-submit-action,
+.completion-submit-action {
   padding-top: 12px;
   border-top: 1px solid var(--line);
 }
@@ -1568,6 +1570,7 @@ button:disabled {
 
   .packing-start-action .primary-btn,
   .shipping-submit-action .primary-btn,
+  .completion-submit-action .primary-btn,
   .packing-check-control {
     width: 100%;
   }

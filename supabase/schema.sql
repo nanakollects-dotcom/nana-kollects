@@ -1255,13 +1255,10 @@ as $$
 declare
   v_user_id uuid := auth.uid();
   v_order public.orders%rowtype;
-  v_from_status text;
+  v_note text := coalesce(nullif(trim(coalesce(p_note, '')), ''), 'Order marked Completed.');
 begin
   if v_user_id is null then
     raise exception 'No authenticated user found.';
-  end if;
-  if p_completed_at is null then
-    raise exception 'Completion date and time are required.';
   end if;
 
   select * into v_order
@@ -1272,38 +1269,30 @@ begin
   if not found then
     raise exception 'Order not found.';
   end if;
-  if v_order.fulfillment_status = 'completed' then
-    return v_order;
+  if v_order.fulfillment_status <> 'shipped' then
+    raise exception 'Only Shipped Orders can be marked Completed.';
   end if;
-
-  if v_order.fulfillment_method = 'pickup' then
-    if v_order.fulfillment_status <> 'packed' then
-      raise exception 'Pickup Orders can be completed only from Packed.';
-    end if;
-    if v_order.packed_at is null or p_completed_at < v_order.packed_at then
-      raise exception 'Completion date and time cannot be before packing.';
-    end if;
-  else
-    if v_order.fulfillment_status <> 'shipped' then
-      raise exception 'Shipment Orders can be completed only from Shipped.';
-    end if;
-    if v_order.shipped_at is null or p_completed_at < v_order.shipped_at then
-      raise exception 'Completion date and time cannot be before shipping.';
-    end if;
+  if p_completed_at is null then
+    raise exception 'Completion date and time are required.';
   end if;
-
-  v_from_status := v_order.fulfillment_status;
+  if v_order.shipped_at is null or p_completed_at < v_order.shipped_at then
+    raise exception 'Completion date and time cannot be before shipping.';
+  end if;
+  if length(v_note) > 2000 then
+    raise exception 'Completion note is too long.';
+  end if;
 
   update public.orders
-  set fulfillment_status = 'completed', completed_at = p_completed_at
+  set fulfillment_status = 'completed',
+      completed_at = p_completed_at
   where id = v_order.id and user_id = v_user_id
   returning * into v_order;
 
   insert into public.order_fulfillment_events (
     user_id, order_id, from_status, to_status, actor_user_id, note, metadata
   ) values (
-    v_user_id, v_order.id, v_from_status, 'completed', v_user_id,
-    nullif(trim(coalesce(p_note, '')), ''),
+    v_user_id, v_order.id, 'shipped', 'completed', v_user_id,
+    v_note,
     jsonb_build_object('action', 'mark_completed')
   );
 

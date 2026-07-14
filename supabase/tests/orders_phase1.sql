@@ -243,7 +243,7 @@ begin
     raise exception 'Shipment completed before Shipped.';
   exception
     when raise_exception then
-      if sqlerrm <> 'Shipment Orders can be completed only from Shipped.' then raise; end if;
+      if sqlerrm <> 'Only Shipped Orders can be marked Completed.' then raise; end if;
   end;
 end;
 $$;
@@ -341,10 +341,19 @@ select public.mark_order_completed(
   (select id from public.orders where source_payment_request_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1'),
   now(), 'Delivered'
 );
-select public.mark_order_completed(
-  (select id from public.orders where source_payment_request_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1'),
-  now(), 'Delivered'
-);
+do $$
+declare
+  v_order_id uuid := (select id from public.orders where source_payment_request_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1');
+begin
+  begin
+    perform public.mark_order_completed(v_order_id, now(), 'Delivered');
+    raise exception 'Completed Order unexpectedly transitioned again.';
+  exception
+    when raise_exception then
+      if sqlerrm <> 'Only Shipped Orders can be marked Completed.' then raise; end if;
+  end;
+end;
+$$;
 
 do $$
 declare
@@ -386,7 +395,7 @@ begin
     raise exception 'Pickup completed before Packed.';
   exception
     when raise_exception then
-      if sqlerrm <> 'Pickup Orders can be completed only from Packed.' then raise; end if;
+      if sqlerrm <> 'Only Shipped Orders can be marked Completed.' then raise; end if;
   end;
 end;
 $$;
@@ -417,10 +426,19 @@ begin
 end;
 $$;
 
-select public.mark_order_completed(
-  (select id from public.orders where source_payment_request_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb4'),
-  now(), 'Customer handoff'
-);
+do $$
+declare
+  v_pickup_order_id uuid := (select id from public.orders where source_payment_request_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb4');
+begin
+  begin
+    perform public.mark_order_completed(v_pickup_order_id, now(), 'Customer handoff');
+    raise exception 'Packed Pickup Order unexpectedly completed through the shipment flow.';
+  exception
+    when raise_exception then
+      if sqlerrm <> 'Only Shipped Orders can be marked Completed.' then raise; end if;
+  end;
+end;
+$$;
 
 do $$
 begin
@@ -482,7 +500,7 @@ begin
   if (select count(*) from public.order_fulfillment_events e join public.orders o on o.id = e.order_id where o.source_payment_request_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1') <> 7 then
     raise exception 'Shipment transition retries wrote an unexpected number of events.';
   end if;
-  if (select count(*) from public.order_fulfillment_events e join public.orders o on o.id = e.order_id where o.source_payment_request_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb4') <> 4 then
+  if (select count(*) from public.order_fulfillment_events e join public.orders o on o.id = e.order_id where o.source_payment_request_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb4') <> 3 then
     raise exception 'Pickup transitions wrote an unexpected number of events.';
   end if;
   if (select status from public.inventory_items where id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1') <> 'Sold'
@@ -496,7 +514,8 @@ begin
     or has_function_privilege('authenticated', 'public.set_order_item_packed(uuid,boolean)', 'EXECUTE')
     or not has_function_privilege('authenticated', 'public.set_order_item_packed(uuid,uuid,boolean)', 'EXECUTE')
     or not has_function_privilege('authenticated', 'public.mark_order_packed(uuid)', 'EXECUTE')
-    or not has_function_privilege('authenticated', 'public.mark_order_shipped(uuid,text,text,text,timestamp with time zone,text)', 'EXECUTE') then
+    or not has_function_privilege('authenticated', 'public.mark_order_shipped(uuid,text,text,text,timestamp with time zone,text)', 'EXECUTE')
+    or not has_function_privilege('authenticated', 'public.mark_order_completed(uuid,timestamp with time zone,text)', 'EXECUTE') then
     raise exception 'Lifecycle RPC execution grants are incorrect.';
   end if;
 end;
@@ -508,7 +527,7 @@ do $$
 begin
   if (select count(*) from public.orders) <> 3
     or (select count(*) from public.order_items) <> 3
-    or (select count(*) from public.order_fulfillment_events) <> 12 then
+    or (select count(*) from public.order_fulfillment_events) <> 11 then
     raise exception 'RLS exposed another user''s Order domain rows.';
   end if;
 

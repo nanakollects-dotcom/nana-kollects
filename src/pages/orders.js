@@ -1,8 +1,9 @@
 import { emptyState, modal, pageHeader } from "../components/ui.js";
 import { formatMoney } from "../components/format.js";
-import { markOrderPacked, setOrderItemPacked, startOrderPacking } from "../services/repository.js";
+import { markOrderPacked, markOrderShipped, setOrderItemPacked, startOrderPacking } from "../services/repository.js";
 import {
   canMarkOrderPacked,
+  canMarkOrderShipped,
   canStartOrderPacking,
   canToggleOrderPackingItem,
   filterOrders,
@@ -23,6 +24,7 @@ import {
   PACKING_ITEM_STATES,
   PACKING_READINESS,
   sortOrders,
+  validateOrderShipping,
 } from "../core/orders.js";
 
 let searchTerm = "";
@@ -35,10 +37,14 @@ let activeOrderWorkspace = null;
 const pendingStartOrderIds = new Set();
 const pendingPackingItemIds = new Set();
 const pendingMarkPackedOrderIds = new Set();
+const pendingMarkShippedOrderIds = new Set();
 const packingFeedbackByOrder = new Map();
+const shippingFeedbackByOrder = new Map();
+const shippingDraftByOrder = new Map();
 
 const defaultPackingActions = {
   markOrderPacked,
+  markOrderShipped,
   setOrderItemPacked,
   startOrderPacking,
 };
@@ -218,6 +224,104 @@ function renderPackingFeedback(orderId) {
   if (!feedback) return "";
   const role = feedback.tone === "error" || feedback.tone === "recovery" ? "alert" : "status";
   return `<div class="packing-feedback packing-feedback-${feedback.tone}" role="${role}" aria-live="polite">${escapeText(feedback.message)}</div>`;
+}
+
+function shippingDraft(order) {
+  if (!shippingDraftByOrder.has(order.id)) {
+    shippingDraftByOrder.set(order.id, {
+      courier: String(order.courier || ""),
+      trackingNumber: String(order.trackingNumber || ""),
+      shippingNote: String(order.shippingNote || ""),
+    });
+  }
+  return shippingDraftByOrder.get(order.id);
+}
+
+function renderShippingFeedback(orderId) {
+  const feedback = shippingFeedbackByOrder.get(orderId);
+  if (!feedback) return "";
+  const role = feedback.tone === "error" || feedback.tone === "recovery" ? "alert" : "status";
+  return `<div class="packing-feedback packing-feedback-${feedback.tone}" role="${role}" aria-live="polite">${escapeText(feedback.message)}</div>`;
+}
+
+export function renderShippingWorkspace(store = {}, orderId = "") {
+  const order = Array.isArray(store.orders) ? store.orders.find((entry) => entry.id === orderId) : null;
+  if (!order) {
+    return modal(
+      "Shipping Workspace",
+      `<div class="shipping-workspace"><div class="modal-header order-details-header packing-header"><button class="icon-btn" type="button" data-back-to-order-details>Back</button><div><h2>Shipping Workspace</h2><p>Order reference unavailable</p></div><button class="icon-btn" type="button" data-close-order-details>Close</button></div><section class="modal-section">${emptyState("Order not found", "This Order is no longer available in the loaded store.")}</section></div>`,
+      "order-details-panel shipping-workspace-panel",
+    );
+  }
+
+  const reference = displayText(order.orderNumber, "Order reference unavailable");
+  const draft = shippingDraft(order);
+  const pending = pendingMarkShippedOrderIds.has(order.id);
+  const editable = order.fulfillmentStatus === ORDER_STATUSES.PACKED && order.fulfillmentMethod !== FULFILLMENT_METHODS.PICKUP;
+  const validationInput = { ...draft, shippedAt: new Date().toISOString() };
+  const errors = validateOrderShipping(order, validationInput);
+  const ready = canMarkOrderShipped(order, validationInput);
+  const eventsAvailable = Array.isArray(store.orderEvents);
+  const events = eventsAvailable ? store.orderEvents.filter((event) => event.orderId === order.id) : [];
+  const inputDisabled = !editable || pending ? "disabled" : "";
+  const readiness = order.fulfillmentStatus === ORDER_STATUSES.SHIPPED
+    ? "Shipment confirmed"
+    : ready
+      ? "Ready to ship"
+      : "Shipping information required";
+  const actionCopy = order.fulfillmentStatus === ORDER_STATUSES.SHIPPED
+    ? "This shipment is confirmed and the saved details are read-only."
+    : editable
+      ? "Enter the carrier details exactly as they should appear in fulfillment records."
+      : "Shipping actions are unavailable for this Order status or fulfillment method.";
+
+  return modal(
+    `Shipping Workspace: ${escapeText(reference)}`,
+    `<div class="shipping-workspace">
+      <div class="modal-header order-details-header packing-header">
+        <button class="icon-btn" type="button" data-back-to-order-details>Back</button>
+        <div><h2>Shipping Workspace</h2><p class="mono">${escapeText(reference)}</p></div>
+        <button class="icon-btn" type="button" data-close-order-details>Close</button>
+      </div>
+      <section class="packing-hero" aria-label="Shipping workspace summary">
+        <div><strong>${escapeText(displayText(order.customerName, "Customer unavailable"))}</strong><span class="pill ${getOrderStatusClass(order.fulfillmentStatus)}">${escapeText(getOrderStatusLabel(order.fulfillmentStatus))}</span></div>
+        <div><span>${escapeText(getFulfillmentMethodLabel(order.fulfillmentMethod))}</span><strong>Packed ${escapeText(formatCreatedAt(order.packedAt))}</strong></div>
+        <p>${escapeText(actionCopy)}</p>
+      </section>
+      ${renderShippingFeedback(order.id)}
+      <section class="modal-section">
+        <div class="order-details-section-heading"><h3>Shipment Information</h3><strong data-shipping-readiness>${escapeText(readiness)}</strong></div>
+        <div class="shipping-form" data-shipping-form aria-busy="${pending}">
+          <label>Courier
+            <input data-shipping-field="courier" value="${escapeText(draft.courier)}" maxlength="160" ${inputDisabled} aria-label="Courier for ${escapeText(reference)}" aria-describedby="shipping-courier-error" />
+            <small id="shipping-courier-error" data-shipping-error="courier">${escapeText(errors.courier || "")}</small>
+          </label>
+          <label>Tracking Number
+            <input data-shipping-field="trackingNumber" value="${escapeText(draft.trackingNumber)}" maxlength="240" ${inputDisabled} aria-label="Tracking Number for ${escapeText(reference)}" aria-describedby="shipping-tracking-error" />
+            <small id="shipping-tracking-error" data-shipping-error="tracking">${escapeText(errors.tracking || "")}</small>
+          </label>
+          <label class="shipping-note-field">Shipping Notes
+            <textarea data-shipping-field="shippingNote" maxlength="2000" rows="4" ${inputDisabled} aria-label="Shipping Notes for ${escapeText(reference)}">${escapeText(draft.shippingNote)}</textarea>
+            <small>Optional handling or fulfillment context.</small>
+          </label>
+        </div>
+      </section>
+      <div class="packing-start-action shipping-submit-action">
+        <button class="primary-btn" type="button" data-mark-order-shipped ${pending ? "disabled" : ""} ${pending ? 'aria-busy="true"' : ""} ${!ready && !pending ? "hidden" : ""} aria-label="${escapeText(`${pending ? "Marking Shipped" : "Mark Shipped"} for ${reference}`)}">${pending ? "Marking Shipped..." : "Mark Shipped"}</button>
+      </div>
+      <section class="modal-section"><h3>Shipping Readiness</h3><p data-shipping-readiness-copy>${escapeText(readiness)}. Courier and tracking number are required.</p></section>
+      <section class="modal-section"><h3>Shipment Context</h3><div class="order-detail-grid">
+        ${renderDetailValue("Shipping address", order.shippingAddress, "Address unavailable")}
+        ${renderDetailValue("Packed", formatCreatedAt(order.packedAt))}
+        ${renderDetailValue("Shipped", formatCreatedAt(order.shippedAt))}
+        ${renderDetailValue("Saved courier", order.courier, "Not assigned")}
+        ${renderDetailValue("Saved tracking number", order.trackingNumber, "Not assigned")}
+        ${renderLatestEvent(events, eventsAvailable)}
+      </div></section>
+      <section class="modal-section"><h3>Fulfillment Timeline</h3>${renderOrderTimeline(events, eventsAvailable)}</section>
+    </div>`,
+    "order-details-panel shipping-workspace-panel",
+  );
 }
 
 function renderPackingItems(order, items, available, reference) {
@@ -415,6 +519,8 @@ export function renderOrderDetailsWorkspace(store = {}, orderId = "") {
   const progress = getOrderChecklistProgress(items);
   const statusLabel = getOrderStatusLabel(order.fulfillmentStatus);
   const methodLabel = getFulfillmentMethodLabel(order.fulfillmentMethod);
+  const shippingWorkspaceAvailable = order.fulfillmentMethod !== FULFILLMENT_METHODS.PICKUP
+    && [ORDER_STATUSES.PACKED, ORDER_STATUSES.SHIPPED].includes(order.fulfillmentStatus);
 
   return modal(
     `Order Details: ${escapeText(reference)}`,
@@ -440,6 +546,7 @@ export function renderOrderDetailsWorkspace(store = {}, orderId = "") {
 
       <div class="order-details-actions">
         <button class="primary-btn" type="button" data-open-packing-workspace>View Packing Workspace</button>
+        ${shippingWorkspaceAvailable ? `<button class="primary-btn" type="button" data-open-shipping-workspace>View Shipping Workspace</button>` : ""}
       </div>
 
       <section class="modal-section">
@@ -533,6 +640,8 @@ function openOrderDetails(root, store, orderId, trigger, notify, refresh, packin
     if (!preserveSession) {
       activeOrderWorkspace = null;
       packingFeedbackByOrder.delete(orderId);
+      shippingFeedbackByOrder.delete(orderId);
+      shippingDraftByOrder.delete(orderId);
     }
     const focusTarget = trigger?.isConnected ? trigger : findOrderTrigger(root, orderId);
     if (restoreFocus && focusTarget?.isConnected) focusTarget.focus();
@@ -558,12 +667,14 @@ function openOrderDetails(root, store, orderId, trigger, notify, refresh, packin
     }
   };
 
-  const show = (view, returnFocusToPackingButton = false) => {
+  const show = (view, returnFocusTo = "") => {
     if (activeOrderWorkspace?.orderId === orderId) activeOrderWorkspace.view = view;
     backdrop?.remove();
     const html = view === "packing"
       ? renderPackingWorkspace(store, orderId)
-      : renderOrderDetailsWorkspace(store, orderId);
+      : view === "shipping"
+        ? renderShippingWorkspace(store, orderId)
+        : renderOrderDetailsWorkspace(store, orderId);
     root.insertAdjacentHTML("beforeend", html);
     const panel = root.querySelector(".order-details-panel");
     backdrop = panel?.closest(".modal-backdrop") || null;
@@ -571,7 +682,8 @@ function openOrderDetails(root, store, orderId, trigger, notify, refresh, packin
 
     panel.querySelector("[data-close-order-details]")?.addEventListener("click", () => close());
     panel.querySelector("[data-open-packing-workspace]")?.addEventListener("click", () => show("packing"));
-    panel.querySelector("[data-back-to-order-details]")?.addEventListener("click", () => show("details", true));
+    panel.querySelector("[data-open-shipping-workspace]")?.addEventListener("click", () => show("shipping"));
+    panel.querySelector("[data-back-to-order-details]")?.addEventListener("click", () => show("details", view));
     backdrop.addEventListener("click", (event) => {
       if (event.target === backdrop) close();
     });
@@ -669,6 +781,111 @@ function openOrderDetails(root, store, orderId, trigger, notify, refresh, packin
       }
     });
 
+    const syncShippingFormState = () => {
+      const order = Array.isArray(store.orders) ? store.orders.find((entry) => entry.id === orderId) : null;
+      const form = panel.querySelector("[data-shipping-form]");
+      if (!order || !form) return;
+      const draft = {
+        courier: form.querySelector('[data-shipping-field="courier"]')?.value || "",
+        trackingNumber: form.querySelector('[data-shipping-field="trackingNumber"]')?.value || "",
+        shippingNote: form.querySelector('[data-shipping-field="shippingNote"]')?.value || "",
+      };
+      shippingDraftByOrder.set(orderId, draft);
+      const input = { ...draft, shippedAt: new Date().toISOString() };
+      const errors = validateOrderShipping(order, input);
+      const ready = canMarkOrderShipped(order, input);
+      const markButton = panel.querySelector("[data-mark-order-shipped]");
+      if (markButton && !pendingMarkShippedOrderIds.has(orderId)) {
+        markButton.hidden = !ready;
+        markButton.disabled = !ready;
+      }
+      const readiness = ready ? "Ready to ship" : "Shipping information required";
+      const readinessLabel = panel.querySelector("[data-shipping-readiness]");
+      const readinessCopy = panel.querySelector("[data-shipping-readiness-copy]");
+      if (readinessLabel) readinessLabel.textContent = readiness;
+      if (readinessCopy) readinessCopy.textContent = `${readiness}. Courier and tracking number are required.`;
+      const courierError = panel.querySelector('[data-shipping-error="courier"]');
+      const trackingError = panel.querySelector('[data-shipping-error="tracking"]');
+      if (courierError) courierError.textContent = errors.courier || "";
+      if (trackingError) trackingError.textContent = errors.tracking || "";
+    };
+
+    panel.querySelectorAll("[data-shipping-field]").forEach((field) => {
+      field.addEventListener("input", syncShippingFormState);
+    });
+
+    panel.querySelector("[data-mark-order-shipped]")?.addEventListener("click", async () => {
+      const order = Array.isArray(store.orders) ? store.orders.find((entry) => entry.id === orderId) : null;
+      const draft = shippingDraftByOrder.get(orderId) || shippingDraft(order || {});
+      const input = {
+        courier: String(draft.courier || "").trim(),
+        trackingNumber: String(draft.trackingNumber || "").trim(),
+        noTrackingReason: "",
+        shippedAt: new Date().toISOString(),
+        shippingNote: String(draft.shippingNote || "").trim(),
+      };
+      if (pendingMarkShippedOrderIds.has(orderId) || !canMarkOrderShipped(order, input)) {
+        syncShippingFormState();
+        return;
+      }
+
+      const previousEventIds = new Set(
+        (Array.isArray(store.orderEvents) ? store.orderEvents : [])
+          .filter((event) => event.orderId === orderId)
+          .map((event) => event.id),
+      );
+      pendingMarkShippedOrderIds.add(orderId);
+      if (activeOrderWorkspace?.orderId === orderId) activeOrderWorkspace.focus = { kind: "mark-shipped" };
+      shippingFeedbackByOrder.set(orderId, { tone: "pending", message: "Marking this Order Shipped..." });
+      show("shipping");
+
+      try {
+        const syncedStore = await packingActions.markOrderShipped(orderId, input);
+        const savedOrder = Array.isArray(syncedStore?.orders)
+          ? syncedStore.orders.find((entry) => entry.id === orderId)
+          : null;
+        const newShippedEvents = Array.isArray(syncedStore?.orderEvents)
+          ? syncedStore.orderEvents.filter((event) => (
+            event.orderId === orderId
+            && event.fromStatus === ORDER_STATUSES.PACKED
+            && event.toStatus === ORDER_STATUSES.SHIPPED
+            && !previousEventIds.has(event.id)
+          ))
+          : [];
+        const shippedAt = new Date(savedOrder?.shippedAt || "");
+        const persisted = savedOrder?.fulfillmentStatus === ORDER_STATUSES.SHIPPED
+          && !Number.isNaN(shippedAt.getTime())
+          && String(savedOrder?.courier || "").trim() === input.courier
+          && String(savedOrder?.trackingNumber || "").trim() === input.trackingNumber
+          && String(savedOrder?.shippingNote || "").trim() === input.shippingNote
+          && newShippedEvents.length === 1;
+        if (!persisted) {
+          shippingFeedbackByOrder.set(orderId, {
+            tone: "recovery",
+            message: "The Shipped transition may have saved, but the persisted shipment could not be confirmed. Refresh the page before trying again.",
+          });
+          notify("Shipped status needs confirmation. Refresh the page.", true);
+        } else {
+          shippingDraftByOrder.set(orderId, {
+            courier: savedOrder.courier,
+            trackingNumber: savedOrder.trackingNumber,
+            shippingNote: savedOrder.shippingNote,
+          });
+          shippingFeedbackByOrder.set(orderId, { tone: "success", message: "Order marked Shipped and confirmed." });
+          notify("Order marked Shipped.");
+        }
+      } catch (error) {
+        const feedback = packingFailureFeedback(error);
+        shippingFeedbackByOrder.set(orderId, feedback);
+        notify(feedback.message, true);
+      } finally {
+        pendingMarkShippedOrderIds.delete(orderId);
+        if (closeOrderDetailsModal === close && !backdrop?.isConnected) close(false);
+        if (activeOrderWorkspace?.orderId !== orderId) shippingFeedbackByOrder.delete(orderId);
+        refresh();
+      }
+    });
+
     panel.querySelectorAll("[data-packing-item-toggle]").forEach((checkbox) => {
       checkbox.addEventListener("change", async () => {
         const itemId = checkbox.dataset.packingItemToggle;
@@ -724,11 +941,14 @@ function openOrderDetails(root, store, orderId, trigger, notify, refresh, packin
     const initialFocus = rememberedItem
       || (rememberedFocus?.kind === "start" ? panel.querySelector("[data-start-order-packing]") || panel.querySelector("[data-packing-item-toggle]") : null)
       || (rememberedFocus?.kind === "mark-packed" ? panel.querySelector("[data-mark-order-packed]") || panel.querySelector("[data-back-to-order-details]") : null)
-      || (returnFocusToPackingButton
-      ? panel.querySelector("[data-open-packing-workspace]")
-      : view === "packing"
-        ? panel.querySelector("[data-back-to-order-details]")
-        : panel.querySelector("[data-close-order-details]"));
+      || (rememberedFocus?.kind === "mark-shipped" ? panel.querySelector("[data-mark-order-shipped]") || panel.querySelector("[data-back-to-order-details]") : null)
+      || (returnFocusTo === "packing"
+        ? panel.querySelector("[data-open-packing-workspace]")
+        : returnFocusTo === "shipping"
+          ? panel.querySelector("[data-open-shipping-workspace]")
+          : ["packing", "shipping"].includes(view)
+            ? panel.querySelector("[data-back-to-order-details]")
+            : panel.querySelector("[data-close-order-details]"));
     initialFocus?.focus();
   };
 

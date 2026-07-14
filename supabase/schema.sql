@@ -1153,6 +1153,7 @@ declare
   v_courier text := nullif(trim(coalesce(p_courier, '')), '');
   v_tracking_number text := nullif(trim(coalesce(p_tracking_number, '')), '');
   v_no_tracking_reason text := nullif(trim(coalesce(p_no_tracking_reason, '')), '');
+  v_shipping_note text := nullif(trim(coalesce(p_shipping_note, '')), '');
 begin
   if v_user_id is null then
     raise exception 'No authenticated user found.';
@@ -1166,14 +1167,11 @@ begin
   if not found then
     raise exception 'Order not found.';
   end if;
-  if v_order.fulfillment_method = 'pickup' then
-    raise exception 'Pickup Orders cannot be marked Shipped.';
-  end if;
-  if v_order.fulfillment_status = 'shipped' then
-    return v_order;
-  end if;
   if v_order.fulfillment_status <> 'packed' then
     raise exception 'Only Packed Orders can be marked Shipped.';
+  end if;
+  if v_order.fulfillment_method = 'pickup' then
+    raise exception 'Pickup Orders cannot be marked Shipped.';
   end if;
 
   perform 1
@@ -1187,8 +1185,10 @@ begin
     where order_id = v_order.id and user_id = v_user_id and packing_required
   ) or exists (
     select 1 from public.order_items
-    where order_id = v_order.id and user_id = v_user_id
-      and packing_required and checked_at is null
+    where order_id = v_order.id
+      and user_id = v_user_id
+      and packing_required
+      and (checked_at is null or checked_by is distinct from v_user_id)
   ) then
     raise exception 'Every required Order Item must be checked before shipping.';
   end if;
@@ -1198,14 +1198,20 @@ begin
   if v_courier is null then
     raise exception 'Courier is required before shipping.';
   end if;
+  if length(v_courier) > 160 then
+    raise exception 'Courier is too long.';
+  end if;
+  if v_tracking_number is null or v_no_tracking_reason is not null then
+    raise exception 'Tracking number is required before shipping.';
+  end if;
+  if length(v_tracking_number) > 240 then
+    raise exception 'Tracking number is too long.';
+  end if;
+  if length(coalesce(v_shipping_note, '')) > 2000 then
+    raise exception 'Shipping note is too long.';
+  end if;
   if p_shipped_at is null then
     raise exception 'Shipped date and time are required.';
-  end if;
-  if v_tracking_number is null and v_no_tracking_reason is null then
-    raise exception 'Enter a tracking number or an explicit no-tracking reason.';
-  end if;
-  if v_tracking_number is not null and v_no_tracking_reason is not null then
-    raise exception 'Use either a tracking number or a no-tracking reason, not both.';
   end if;
   if v_order.packed_at is null or p_shipped_at < v_order.packed_at then
     raise exception 'Shipped date and time cannot be before packing.';
@@ -1215,9 +1221,8 @@ begin
   set fulfillment_status = 'shipped',
       courier = v_courier,
       tracking_number = v_tracking_number,
-      tracking_not_applicable_reason = v_no_tracking_reason,
       shipped_at = p_shipped_at,
-      shipping_note = nullif(trim(coalesce(p_shipping_note, '')), '')
+      shipping_note = v_shipping_note
   where id = v_order.id and user_id = v_user_id
   returning * into v_order;
 
@@ -1229,8 +1234,7 @@ begin
     jsonb_build_object(
       'action', 'mark_shipped',
       'courier', v_courier,
-      'has_tracking_number', v_tracking_number is not null,
-      'has_no_tracking_reason', v_no_tracking_reason is not null
+      'has_tracking_number', true
     )
   );
 

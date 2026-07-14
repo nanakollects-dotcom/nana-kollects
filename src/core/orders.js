@@ -74,7 +74,7 @@ export const ORDER_VALIDATION_MESSAGES = {
   REOPEN_BEFORE_EDITING: "Reopen the Packed Order before changing its checklist.",
   SHIPPING_ADDRESS_REQUIRED: "Shipping address is required before shipping.",
   COURIER_REQUIRED: "Courier is required before shipping.",
-  TRACKING_REQUIRED: "Enter a tracking number or an explicit no-tracking reason.",
+  TRACKING_REQUIRED: "Tracking number is required before shipping.",
   PICKUP_CANNOT_SHIP: "Pickup Orders cannot be marked Shipped.",
   COMPLETED_IS_FINAL: "Completed Orders cannot be changed.",
 };
@@ -425,8 +425,10 @@ export function sortOrders(orders = [], sort = ORDER_SORTS.PRIORITY) {
 export function validateOrderShipping(order = {}, input = {}) {
   const errors = {};
   const trackingNumber = String(input.trackingNumber || "").trim();
-  const noTrackingReason = String(input.noTrackingReason || "").trim();
 
+  if (!isOrderEntityId(order.id) || normalizeOrderStatus(order.fulfillmentStatus) !== ORDER_STATUSES.PACKED) {
+    errors.fulfillmentStatus = "Only Packed Orders can be marked Shipped.";
+  }
   if (order.fulfillmentMethod === FULFILLMENT_METHODS.PICKUP) {
     errors.fulfillmentMethod = ORDER_VALIDATION_MESSAGES.PICKUP_CANNOT_SHIP;
   }
@@ -435,8 +437,11 @@ export function validateOrderShipping(order = {}, input = {}) {
   }
   if (!String(input.courier || "").trim()) errors.courier = ORDER_VALIDATION_MESSAGES.COURIER_REQUIRED;
   if (!input.shippedAt) errors.shippedAt = "Shipped date and time are required.";
-  if (!trackingNumber && !noTrackingReason) errors.tracking = ORDER_VALIDATION_MESSAGES.TRACKING_REQUIRED;
-  if (trackingNumber && noTrackingReason) errors.tracking = "Use either tracking or a no-tracking reason, not both.";
+  if (!trackingNumber) errors.tracking = ORDER_VALIDATION_MESSAGES.TRACKING_REQUIRED;
 
   return errors;
+}
+
+export function canMarkOrderShipped(order, input = {}) {
+  return Object.keys(validateOrderShipping(order, input)).length === 0;
 }

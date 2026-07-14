@@ -291,7 +291,15 @@ begin
     raise exception 'Shipping unexpectedly accepted blank tracking information.';
   exception
     when raise_exception then
-      if sqlerrm <> 'Enter a tracking number or an explicit no-tracking reason.' then raise; end if;
+      if sqlerrm <> 'Tracking number is required before shipping.' then raise; end if;
+  end;
+
+  begin
+    perform public.mark_order_shipped(v_order_id, 'J&T', '', 'No tracking', now(), null);
+    raise exception 'Shipping unexpectedly accepted a no-tracking path.';
+  exception
+    when raise_exception then
+      if sqlerrm <> 'Tracking number is required before shipping.' then raise; end if;
   end;
 end;
 $$;
@@ -300,10 +308,20 @@ select public.mark_order_shipped(
   (select id from public.orders where source_payment_request_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1'),
   'J&T', 'TRACK-001', null, now(), 'Handled with care'
 );
-select public.mark_order_shipped(
-  (select id from public.orders where source_payment_request_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1'),
-  'J&T', 'TRACK-001', null, now(), 'Handled with care'
-);
+
+do $$
+declare
+  v_order_id uuid := (select id from public.orders where source_payment_request_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1');
+begin
+  begin
+    perform public.mark_order_shipped(v_order_id, 'J&T', 'TRACK-001', null, now(), 'Handled with care');
+    raise exception 'Shipped Order unexpectedly transitioned again.';
+  exception
+    when raise_exception then
+      if sqlerrm <> 'Only Packed Orders can be marked Shipped.' then raise; end if;
+  end;
+end;
+$$;
 
 do $$
 declare

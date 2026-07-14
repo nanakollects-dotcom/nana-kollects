@@ -1045,12 +1045,79 @@ button:disabled {
 .order-details-actions {
   display: flex;
   justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .packing-workspace {
   display: grid;
   gap: 12px;
   padding: 16px;
+}
+
+.shipping-workspace {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+
+.shipping-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.shipping-form label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.shipping-form input,
+.shipping-form textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.shipping-form input:focus,
+.shipping-form textarea:focus {
+  border-color: var(--primary);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
+.shipping-form input:disabled,
+.shipping-form textarea:disabled {
+  opacity: 0.75;
+}
+
+.shipping-form small {
+  min-height: 16px;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-weight: 650;
+}
+
+.shipping-form [data-shipping-error]:not(:empty) {
+  color: var(--danger);
+}
+
+.shipping-note-field {
+  grid-column: 1 / -1;
+}
+
+.shipping-submit-action {
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
 }
 
 .packing-header {
@@ -1500,8 +1567,17 @@ button:disabled {
   }
 
   .packing-start-action .primary-btn,
+  .shipping-submit-action .primary-btn,
   .packing-check-control {
     width: 100%;
+  }
+
+  .shipping-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .shipping-note-field {
+    grid-column: auto;
   }
 
   .packing-item-main,

@@ -127,7 +127,7 @@ export function getSafeErrorCategory(error) {
   const message = errorText(error);
   const code = errorCode(error);
 
-  if (message.includes("failed to fetch") || message.includes("network") || message.includes("timeout")) return "network";
+  if (message.includes("failed to fetch") || message.includes("fetch failed") || message.includes("network") || message.includes("timeout")) return "network";
   if (message.includes("jwt") || message.includes("session") || message.includes("not authenticated") || message.includes("no authenticated user") || code === "PGRST301") return "session";
   if (message.includes("invalid login credentials") || message.includes("email not confirmed")) return "auth";
   if (message.includes("rate limit") || message.includes("too many requests")) return "rate_limit";

@@ -641,7 +641,7 @@ export async function updateSupabaseInventoryItem(itemId, input) {
         .single();
 
       if (rollbackError) {
-        throw new Error(`Linked sale price did not persist and inventory price rollback failed: ${rollbackError.message}`);
+        throw new Error("Inventory and linked Sale updates could not be completed safely.");
       }
       assert(money(rollbackData.price) === previousPrice, "Inventory price rollback did not persist.");
       assert(costMoney(rollbackData.cost) === previousCost, "Inventory cost rollback did not persist.");

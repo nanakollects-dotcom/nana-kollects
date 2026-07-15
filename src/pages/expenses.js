@@ -3,6 +3,7 @@ import { isWithinRange } from "../core/filters.js";
 import { addSupabaseExpense, EXPENSE_CATEGORIES, removeSupabaseExpense, saveSupabaseExpense } from "../services/repository.js";
 import { bindForm, countMetric, emptyState, metricGrid, modal, moneyMetric, pageHeader } from "../components/ui.js";
 import { formatDate, formatMoney } from "../components/format.js";
+import { getSafeUserError } from "../services/errorService.js";
 
 let editingExpenseId = null;
 let isExpenseModalOpen = false;
@@ -160,7 +161,7 @@ export function bindExpensesPage(root, store, notify, refresh) {
         isExpenseModalOpen = false;
         refresh();
       } catch (error) {
-        notify(error.message, true);
+        notify(getSafeUserError(error, "save"), true);
         return false;
       }
     });
@@ -203,7 +204,7 @@ export function bindExpensesPage(root, store, notify, refresh) {
         notify("Expense deleted.");
         refresh();
       } catch (error) {
-        notify(error.message, true);
+        notify(getSafeUserError(error, "save"), true);
       } finally {
         button.dataset.busy = "false";
         button.disabled = false;

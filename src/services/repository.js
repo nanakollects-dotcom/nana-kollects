@@ -1,4 +1,5 @@
 import { getAuthenticatedStoreGeneration, loadStore, replaceStore } from "./storage.js";
+import { createSafeUserError, getSafeUserError, logSafeError } from "./errorService.js";
 import {
   loadSupabaseOrders,
   markSupabaseOrderCompleted,
@@ -85,22 +86,15 @@ async function runOrderOperation(operation) {
   try {
     await operation();
   } catch (error) {
-    console.error("Order mutation failed.");
-    const message = String(error?.message || error || "").toLowerCase();
-    if (message.includes("failed to fetch") || message.includes("network") || message.includes("timeout")) {
-      throw new Error("Unable to update this Order. Check your internet connection and try again.");
-    }
-    if (message.includes("jwt") || message.includes("session") || message.includes("not authenticated")) {
-      throw new Error("Your session expired. Please sign in again.");
-    }
-    throw new Error("Unable to update this Order. Refresh and try again.");
+    logSafeError("order_mutation", error);
+    throw createSafeUserError(error, "order_mutation");
   }
 
   try {
     return await syncSupabaseStore();
   } catch (error) {
-    console.error("Order refresh failed after a successful mutation.");
-    const recoveryError = new Error("The change was saved, but the latest Order data could not be reloaded. Refresh the page to confirm it.");
+    logSafeError("order_refresh", error);
+    const recoveryError = createSafeUserError(error, "order_refresh");
     recoveryError.mutationSucceeded = true;
     throw recoveryError;
   }
@@ -131,46 +125,15 @@ export function markOrderCompleted(orderId, input) {
 }
 
 export function friendlyErrorMessage(error) {
-  const message = String(error?.message || error || "").toLowerCase();
-  const code = String(error?.code || "");
-
-  if (message.includes("failed to fetch") || message.includes("network") || message.includes("timeout")) {
-    return "Unable to save. Check your internet connection and try again.";
-  }
-
-  if (
-    message.includes("jwt") ||
-    message.includes("session") ||
-    message.includes("not authenticated") ||
-    message.includes("no authenticated user") ||
-    code === "PGRST301"
-  ) {
-    return "Your session expired. Please sign in again.";
-  }
-
-  if (message.includes("duplicate key") || message.includes("unique constraint") || code === "23505") {
-    if (message.includes("collections")) return "A collection with this name already exists.";
-    if (message.includes("sku")) return "An item with this SKU already exists.";
-    return "This record already exists.";
-  }
-
-  if (message.includes("row-level security") || message.includes("permission denied") || code === "42501") {
-    return "You do not have permission to save this record. Please sign in again.";
-  }
-
-  if (message.includes("invalid login credentials")) {
-    return "Email or password is incorrect.";
-  }
-
-  return error?.message || "Something went wrong. Please try again.";
+  return getSafeUserError(error, "save");
 }
 
 async function runRepositoryOperation(operation) {
   try {
     return await operation();
   } catch (error) {
-    console.error(error);
-    throw new Error(friendlyErrorMessage(error));
+    logSafeError("repository_operation", error);
+    throw createSafeUserError(error, "save");
   }
 }
 

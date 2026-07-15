@@ -2,6 +2,7 @@ import { addSupabaseCollection, saveSupabaseCollection } from "../services/repos
 import { getCollectionBusinessMetrics } from "../core/financials.js";
 import { bindForm, emptyState, modal, pageHeader } from "../components/ui.js";
 import { formatDate, formatMoney, formatPercent } from "../components/format.js";
+import { getSafeUserError } from "../services/errorService.js";
 
 let isCollectionModalOpen = false;
 let editingCollectionId = null;
@@ -158,7 +159,7 @@ export function bindCollectionsPage(root, store, notify, refresh) {
         isCollectionModalOpen = false;
         refresh();
       } catch (error) {
-        notify(error.message, true);
+        notify(getSafeUserError(error, "collection"), true);
         return false;
       }
     });

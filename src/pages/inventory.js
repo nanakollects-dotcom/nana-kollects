@@ -18,6 +18,7 @@ import { formatMoney } from "../components/format.js";
 import { calculatePaymentRequestTotal, COURIER_OPTIONS, displayCourier, isPaymentConfigurationComplete, localDateInputValue, PAYMENT_METHODS, SHIPPING_MODE_LABELS, SHIPPING_MODES, validatePaymentRequestRequiredFields } from "../core/paymentRequests.js";
 import { createPaymentRequestPdf, downloadPaymentRequestPdf } from "../services/paymentRequestPdf.js";
 import { createPaymentRequestImage, sharePaymentRequestImage } from "../services/paymentRequestImage.js";
+import { getSafeUserError } from "../services/errorService.js";
 
 let editingId = null;
 let isModalOpen = false;
@@ -874,7 +875,7 @@ export function bindInventoryPage(root, store, notify, refresh) {
         inventoryDraft = null;
         refresh();
       } catch (error) {
-        notify(error.message, true);
+        notify(getSafeUserError(error, "inventory"), true);
         return false;
       }
     });
@@ -1000,11 +1001,11 @@ export function bindInventoryPage(root, store, notify, refresh) {
           } else {
             notify(`${result.request.requestNumber} created. Item reserved.`);
           }
-        } catch (imageError) {
-          notify(`${result.request.requestNumber} created, but the image could not be prepared: ${imageError.message}`, true);
+        } catch {
+          notify("Payment Request created, but the image could not be prepared. Try again.", true);
         }
       } catch (error) {
-        notify(error.message, true);
+        notify(getSafeUserError(error, "payment_request"), true);
         return false;
       }
     });
@@ -1022,7 +1023,7 @@ export function bindInventoryPage(root, store, notify, refresh) {
         notify("Payment details saved.");
         refresh();
       } catch (error) {
-        notify(error.message, true);
+        notify(getSafeUserError(error, "save"), true);
         return false;
       }
     });
@@ -1036,7 +1037,7 @@ export function bindInventoryPage(root, store, notify, refresh) {
         notify("Payment confirmed and sale recorded.");
         refresh();
       } catch (error) {
-        notify(error.message, true);
+        notify(getSafeUserError(error, "payment_request"), true);
         return false;
       }
     });
@@ -1250,7 +1251,7 @@ export function bindInventoryPage(root, store, notify, refresh) {
         refresh();
       }
     } catch (error) {
-      notify(error.message, true);
+      notify(getSafeUserError(error, "inventory"), true);
     } finally {
       if (button.dataset.busy === "true") {
         button.dataset.busy = "false";

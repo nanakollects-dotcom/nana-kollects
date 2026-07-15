@@ -1,4 +1,5 @@
 import { supabase } from "./supabaseClient.js";
+import { getSafeUserError } from "./errorService.js";
 
 export async function getCurrentUser() {
   const { data, error } = await supabase.auth.getUser();
@@ -43,18 +44,7 @@ export async function signOut() {
 }
 
 export function safeAuthErrorMessage(error, fallback = "Authentication failed. Please try again.") {
-  const message = String(error?.message || "").toLowerCase();
-
-  if (message.includes("invalid login credentials")) return "Email or password is incorrect.";
-  if (message.includes("email not confirmed")) return "Confirm your email before signing in.";
-  if (message.includes("failed to fetch") || message.includes("network") || message.includes("timeout")) {
-    return "Unable to connect. Check your internet connection and try again.";
-  }
-  if (message.includes("rate limit") || message.includes("too many requests")) {
-    return "Too many attempts. Wait a moment and try again.";
-  }
-
-  return fallback;
+  return getSafeUserError(error, "auth") || fallback;
 }
 
 export function subscribeToAuthState(handler) {

@@ -40,6 +40,7 @@ import {
 } from "../services/storage.js";
 import { confirmCsvImport, downloadImportTemplate } from "../services/importService.js";
 import { importSupabaseBackup } from "../services/repository.js";
+import { getSafeUserError } from "../services/errorService.js";
 
 let csvImportPreview = null;
 let csvImportResult = null;
@@ -579,7 +580,7 @@ export function bindDashboardPage(root, store, notify, refresh) {
       event.target.value = "";
       refresh();
     } catch (error) {
-      notify(error.message, true);
+      notify(getSafeUserError(error, "load"), true);
       event.target.value = "";
     }
   });
@@ -616,7 +617,7 @@ export function bindDashboardPage(root, store, notify, refresh) {
         downloadImportTemplate(button.dataset.templateType);
         notify("CSV template downloaded.");
       } catch (error) {
-        notify(error.message, true);
+        notify(getSafeUserError(error, "document"), true);
       }
     });
   });
@@ -651,7 +652,7 @@ export function bindDashboardPage(root, store, notify, refresh) {
         refresh();
       } catch (error) {
         csvImportPreview = null;
-        notify(error.message, true);
+        notify(getSafeUserError(error, "import"), true);
         refresh();
       }
     };
@@ -674,7 +675,7 @@ export function bindDashboardPage(root, store, notify, refresh) {
       notify("CSV import complete. Export a backup to protect the migrated data.");
       refresh();
     } catch (error) {
-      notify(error.message, true);
+      notify(getSafeUserError(error, "import"), true);
     } finally {
       button.disabled = false;
       button.textContent = originalText;

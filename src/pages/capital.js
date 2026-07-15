@@ -4,6 +4,7 @@ import { isWithinRange } from "../core/filters.js";
 import { addSupabaseCapitalEntry, CAPITAL_TYPES, saveSupabaseCapitalEntry } from "../services/repository.js";
 import { bindForm, emptyState, metricGrid, modal, moneyMetric, pageHeader, percentMetric } from "../components/ui.js";
 import { formatDate, formatMoney } from "../components/format.js";
+import { getSafeUserError } from "../services/errorService.js";
 
 let editingCapitalId = null;
 let isCapitalModalOpen = false;
@@ -220,7 +221,7 @@ export function bindCapitalPage(root, store, notify, refresh) {
         isCapitalModalOpen = false;
         refresh();
       } catch (error) {
-        notify(error.message, true);
+        notify(getSafeUserError(error, "save"), true);
         return false;
       }
     });

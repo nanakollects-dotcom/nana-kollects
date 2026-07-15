@@ -4,6 +4,7 @@ import { isWithinRange } from "../core/filters.js";
 import { PAYMENT_STATUSES, PLATFORMS, saveSupabaseSale } from "../services/repository.js";
 import { bindForm, countMetric, emptyState, metricGrid, modal, moneyMetric, pageHeader } from "../components/ui.js";
 import { formatDate, formatMoney } from "../components/format.js";
+import { getSafeUserError } from "../services/errorService.js";
 
 
 let editingSaleId = null;
@@ -239,7 +240,7 @@ export function bindSalesPage(root, store, notify, refresh) {
         notify("Sale updated.");
         refresh();
       } catch (error) {
-        notify(error.message, true);
+        notify(getSafeUserError(error, "save"), true);
         return false;
       }
     });

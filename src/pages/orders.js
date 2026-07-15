@@ -16,10 +16,12 @@ import {
   getPackingWorkspaceState,
   getOrderProgressLabel,
   getOrderQueueMetrics,
+  getOrderAnalytics,
   getOrderStatusClass,
   getOrderStatusLabel,
   getPackingItemState,
   ORDER_QUEUE_FILTERS,
+  ORDER_ANALYTICS_RANGES,
   ORDER_SORTS,
   ORDER_STATUSES,
   PACKING_ITEM_STATES,
@@ -33,6 +35,8 @@ let statusFilter = ORDER_QUEUE_FILTERS.NEEDS_ACTION;
 let methodFilter = ORDER_QUEUE_FILTERS.ALL;
 let sortMode = ORDER_SORTS.PRIORITY;
 let metricFilter = "";
+let ordersViewMode = "queue";
+let analyticsRange = ORDER_ANALYTICS_RANGES.DAYS_30;
 let closeOrderDetailsModal = null;
 let activeOrderWorkspace = null;
 const pendingStartOrderIds = new Set();
@@ -1717,6 +1721,109 @@ function metricCard(label, value, status, metric = "") {
   `;
 }
 
+function formatAnalyticsDuration(metric = {}) {
+  if (!Number.isFinite(metric.averageMs) || metric.sampleSize < 1) return "Unavailable";
+  const minutes = metric.averageMs / (60 * 1000);
+  if (minutes < 1) return "<1 min";
+  if (minutes < 60) return `${Math.round(minutes)} min`;
+  const hours = minutes / 60;
+  if (hours < 24) return `${hours.toFixed(hours < 10 ? 1 : 0)} hr`;
+  const days = hours / 24;
+  return `${days.toFixed(days < 10 ? 1 : 0)} days`;
+}
+
+function analyticsMetric(label, value, description = "") {
+  return `<article class="analytics-kpi" aria-label="${escapeText(`${label}: ${value}${description ? `. ${description}` : ""}`)}"><span>${escapeText(label)}</span><strong>${escapeText(value)}</strong>${description ? `<small>${escapeText(description)}</small>` : ""}</article>`;
+}
+
+export function renderAnalyticsWorkspace(store = {}) {
+  const analytics = getOrderAnalytics(store.orders, store.orderItems, store.orderEvents, { range: analyticsRange });
+  const itemCollectionAvailable = Array.isArray(store.orderItems);
+  const eventCollectionAvailable = Array.isArray(store.orderEvents);
+  const performanceRows = [
+    ["Order created → Packing started", analytics.performance.creationToPacking],
+    ["Packing started → Packed", analytics.performance.packingDuration],
+    ["Packed → Shipped", analytics.performance.packedToShipped],
+    ["Shipped → Completed", analytics.performance.shippedToCompleted],
+    ["Order created → Completed", analytics.performance.totalFulfillment],
+  ];
+  const distributionMaximum = Math.max(...analytics.distribution.map((entry) => entry.count), 1);
+
+  if (!analytics.orders.length) {
+    return `<section class="analytics-workspace" aria-labelledby="operations-analytics-title">
+      <div class="analytics-heading"><div><h2 id="operations-analytics-title">Operations Analytics</h2><p>Display-only fulfillment reporting from the loaded Orders store.</p></div>${renderAnalyticsRangeControl()}</div>
+      <div class="panel analytics-empty">${emptyState("No Orders in this range", "Choose another date range or wait for legitimate Orders to be created.")}</div>
+    </section>`;
+  }
+
+  return `<section class="analytics-workspace" aria-labelledby="operations-analytics-title">
+    <div class="analytics-heading"><div><h2 id="operations-analytics-title">Operations Analytics</h2><p>Display-only fulfillment reporting from the loaded Orders store.</p></div>${renderAnalyticsRangeControl()}</div>
+    <section class="analytics-section" aria-labelledby="analytics-kpis-title">
+      <div class="analytics-section-heading"><div><h3 id="analytics-kpis-title">KPI Summary</h3><p>Orders created within the selected range.</p></div><strong>${escapeText(`${analytics.kpis.total} Orders`)}</strong></div>
+      <div class="analytics-kpi-grid">
+        ${analyticsMetric("Total Orders", analytics.kpis.total)}
+        ${analyticsMetric("Needs Action", analytics.kpis.needsAction)}
+        ${analyticsMetric("Ready to Pack", analytics.kpis.readyToPack)}
+        ${analyticsMetric("Packing", analytics.kpis.packing)}
+        ${analyticsMetric("Packed", analytics.kpis.packed)}
+        ${analyticsMetric("Shipped", analytics.kpis.shipped)}
+        ${analyticsMetric("Completed", analytics.kpis.completed)}
+        ${analyticsMetric("Shipped Today", analytics.kpis.shippedToday)}
+        ${analyticsMetric("Completed Today", analytics.kpis.completedToday)}
+      </div>
+    </section>
+    <div class="analytics-two-column">
+      <section class="analytics-section" aria-labelledby="analytics-performance-title">
+        <div class="analytics-section-heading"><div><h3 id="analytics-performance-title">Fulfillment Performance</h3><p>Invalid or incomplete timestamp pairs are excluded.</p></div></div>
+        <div class="analytics-performance-list">${performanceRows.map(([label, metric]) => analyticsMetric(label, formatAnalyticsDuration(metric), `${metric.sampleSize} ${metric.sampleSize === 1 ? "sample" : "samples"}`)).join("")}</div>
+      </section>
+      <section class="analytics-section" aria-labelledby="analytics-workload-title">
+        <div class="analytics-section-heading"><div><h3 id="analytics-workload-title">Workload</h3><p>Cumulative waiting thresholds for active Orders.</p></div></div>
+        <div class="analytics-kpi-grid analytics-kpi-grid-compact">
+          ${analyticsMetric("Active Orders", analytics.workload.active)}
+          ${analyticsMetric("Waiting over 24h", analytics.workload.waitingOver24)}
+          ${analyticsMetric("Waiting over 48h", analytics.workload.waitingOver48)}
+          ${analyticsMetric("Waiting over 72h", analytics.workload.waitingOver72)}
+          ${analyticsMetric("Packing-required quantity", itemCollectionAvailable ? analytics.workload.outstandingRequiredQuantity : "Unavailable", itemCollectionAvailable ? `${analytics.workload.packingQuantitySampleSize} valid item lines` : "Item collection unavailable")}
+          ${analyticsMetric("Unchecked required quantity", itemCollectionAvailable ? analytics.workload.uncheckedRequiredQuantity : "Unavailable")}
+        </div>
+      </section>
+    </div>
+    <div class="analytics-two-column">
+      <section class="analytics-section" aria-labelledby="analytics-methods-title">
+        <div class="analytics-section-heading"><div><h3 id="analytics-methods-title">Fulfillment Method Breakdown</h3><p>Count and Completed count by stored method.</p></div></div>
+        <div class="analytics-breakdown-list">${analytics.methods.map((entry) => `<div><span>${escapeText(entry.label)}</span><strong>${escapeText(entry.count)}</strong><small>${escapeText(`${entry.completed} Completed`)}</small></div>`).join("")}</div>
+      </section>
+      <section class="analytics-section" aria-labelledby="analytics-couriers-title">
+        <div class="analytics-section-heading"><div><h3 id="analytics-couriers-title">Courier Summary</h3><p>Stored shipment and local-delivery snapshots only.</p></div></div>
+        <div class="analytics-kpi-grid analytics-kpi-grid-compact">
+          ${analyticsMetric("Shipped without tracking", analytics.couriers.shippedWithoutTracking)}
+          ${analyticsMetric("Packed awaiting details", analytics.couriers.packedAwaitingDetails)}
+          ${analyticsMetric("Unknown courier", analytics.couriers.unknownCourierCount)}
+        </div>
+        <div class="analytics-courier-list">${analytics.couriers.byCourier.length ? analytics.couriers.byCourier.map((entry) => `<div><span>${escapeText(entry.courier)}</span><strong>${escapeText(entry.count)}</strong></div>`).join("") : `<p>Courier snapshots are unavailable for this range.</p>`}</div>
+      </section>
+    </div>
+    <section class="analytics-section" aria-labelledby="analytics-distribution-title">
+      <div class="analytics-section-heading"><div><h3 id="analytics-distribution-title">Status Distribution</h3><p>Bars include a numeric value so status is never conveyed by color alone.</p></div></div>
+      <div class="analytics-status-bars">${analytics.distribution.map((entry) => `<div class="analytics-status-row"><span>${escapeText(entry.label)}</span><div class="analytics-status-track" role="img" aria-label="${escapeText(`${entry.label}: ${entry.count} Orders`)}"><i style="width:${Math.round((entry.count / distributionMaximum) * 100)}%"></i></div><strong>${escapeText(entry.count)}</strong></div>`).join("")}</div>
+    </section>
+    <section class="analytics-section" aria-labelledby="analytics-activity-title">
+      <div class="analytics-section-heading"><div><h3 id="analytics-activity-title">Recent Activity</h3><p>Latest safe fulfillment transitions in the selected range.</p></div></div>
+      ${!eventCollectionAvailable ? `<p class="analytics-unavailable">Fulfillment Events are unavailable in the loaded store.</p>` : analytics.recentActivity.length ? `<ol class="analytics-activity-list">${analytics.recentActivity.map((event) => `<li><div><strong class="mono">${escapeText(event.orderReference)}</strong><span>${escapeText(`${event.fromStatus} → ${event.toStatus}`)}</span></div><time>${escapeText(formatCreatedAt(event.createdAt))}</time><p>${escapeText(displayText(event.note, "No activity note"))}</p></li>`).join("")}</ol>` : `<p class="analytics-unavailable">No fulfillment events are available for this range.</p>`}
+    </section>
+  </section>`;
+}
+
+function renderAnalyticsRangeControl() {
+  return `<label class="analytics-range-control">Date range<select id="orders-analytics-range" aria-label="Analytics date range">
+    <option value="7d" ${analyticsRange === ORDER_ANALYTICS_RANGES.DAYS_7 ? "selected" : ""}>Last 7 days</option>
+    <option value="30d" ${analyticsRange === ORDER_ANALYTICS_RANGES.DAYS_30 ? "selected" : ""}>Last 30 days</option>
+    <option value="90d" ${analyticsRange === ORDER_ANALYTICS_RANGES.DAYS_90 ? "selected" : ""}>Last 90 days</option>
+    <option value="all" ${analyticsRange === ORDER_ANALYTICS_RANGES.ALL ? "selected" : ""}>All time</option>
+  </select></label>`;
+}
+
 export function renderOrdersPage(store = {}) {
   if (store.ordersLoading) {
     return `${pageHeader("Orders", "Pack, ship, and complete paid customer orders.")}<div class="panel orders-system-state" aria-busy="true">${emptyState("Loading Orders", "Your fulfillment queue is being synchronized.")}</div>`;
@@ -1730,37 +1837,56 @@ export function renderOrdersPage(store = {}) {
 
   return `
     ${pageHeader("Orders", "Pack, ship, and complete paid customer orders.")}
-    <div class="metric-grid order-metric-grid">
-      ${metricCard("Ready to Pack", metrics.readyToPack, ORDER_STATUSES.READY_TO_PACK)}
-      ${metricCard("Packing", metrics.packing, ORDER_STATUSES.PACKING)}
-      ${metricCard("Packed", metrics.packed, ORDER_STATUSES.PACKED)}
-      ${metricCard("Shipped Today", metrics.shippedToday, ORDER_QUEUE_FILTERS.ALL, "shipped_today")}
-      ${metricCard("Completed Today", metrics.completedToday, ORDER_QUEUE_FILTERS.ALL, "completed_today")}
+    <div class="orders-view-tabs" role="tablist" aria-label="Orders workspace">
+      <button type="button" role="tab" aria-selected="${ordersViewMode === "queue"}" data-orders-view="queue">Order Queue</button>
+      <button type="button" role="tab" aria-selected="${ordersViewMode === "analytics"}" data-orders-view="analytics">Operations Analytics</button>
     </div>
-    <div class="toolbar orders-toolbar">
-      <label class="search-field">Search Orders<input id="orders-search" value="${escapeText(searchTerm)}" placeholder="Search Orders..." /></label>
-      <label>Status<select id="orders-status-filter">
-        <option value="needs_action" ${statusFilter === ORDER_QUEUE_FILTERS.NEEDS_ACTION ? "selected" : ""}>Needs Action</option>
-        <option value="all" ${statusFilter === ORDER_QUEUE_FILTERS.ALL ? "selected" : ""}>All Statuses</option>
-        ${Object.values(ORDER_STATUSES).map((status) => `<option value="${status}" ${statusFilter === status ? "selected" : ""}>${getOrderStatusLabel(status)}</option>`).join("")}
-      </select></label>
-      <label>Fulfillment<select id="orders-method-filter">
-        <option value="all" ${methodFilter === ORDER_QUEUE_FILTERS.ALL ? "selected" : ""}>All Methods</option>
-        ${Object.values(FULFILLMENT_METHODS).map((method) => `<option value="${method}" ${methodFilter === method ? "selected" : ""}>${getFulfillmentMethodLabel(method)}</option>`).join("")}
-      </select></label>
-      <label>Sort<select id="orders-sort">
-        <option value="priority" ${sortMode === ORDER_SORTS.PRIORITY ? "selected" : ""}>Needs attention</option>
-        <option value="oldest" ${sortMode === ORDER_SORTS.OLDEST ? "selected" : ""}>Oldest first</option>
-        <option value="newest" ${sortMode === ORDER_SORTS.NEWEST ? "selected" : ""}>Newest first</option>
-        <option value="customer" ${sortMode === ORDER_SORTS.CUSTOMER ? "selected" : ""}>Customer name</option>
-        <option value="status" ${sortMode === ORDER_SORTS.STATUS ? "selected" : ""}>Status</option>
-      </select></label>
-    </div>
-    ${renderOrderResults(store)}
+    ${ordersViewMode === "analytics" ? renderAnalyticsWorkspace(store) : `
+      <div class="metric-grid order-metric-grid">
+        ${metricCard("Ready to Pack", metrics.readyToPack, ORDER_STATUSES.READY_TO_PACK)}
+        ${metricCard("Packing", metrics.packing, ORDER_STATUSES.PACKING)}
+        ${metricCard("Packed", metrics.packed, ORDER_STATUSES.PACKED)}
+        ${metricCard("Shipped Today", metrics.shippedToday, ORDER_QUEUE_FILTERS.ALL, "shipped_today")}
+        ${metricCard("Completed Today", metrics.completedToday, ORDER_QUEUE_FILTERS.ALL, "completed_today")}
+      </div>
+      <div class="toolbar orders-toolbar">
+        <label class="search-field">Search Orders<input id="orders-search" value="${escapeText(searchTerm)}" placeholder="Search Orders..." /></label>
+        <label>Status<select id="orders-status-filter">
+          <option value="needs_action" ${statusFilter === ORDER_QUEUE_FILTERS.NEEDS_ACTION ? "selected" : ""}>Needs Action</option>
+          <option value="all" ${statusFilter === ORDER_QUEUE_FILTERS.ALL ? "selected" : ""}>All Statuses</option>
+          ${Object.values(ORDER_STATUSES).map((status) => `<option value="${status}" ${statusFilter === status ? "selected" : ""}>${getOrderStatusLabel(status)}</option>`).join("")}
+        </select></label>
+        <label>Fulfillment<select id="orders-method-filter">
+          <option value="all" ${methodFilter === ORDER_QUEUE_FILTERS.ALL ? "selected" : ""}>All Methods</option>
+          ${Object.values(FULFILLMENT_METHODS).map((method) => `<option value="${method}" ${methodFilter === method ? "selected" : ""}>${getFulfillmentMethodLabel(method)}</option>`).join("")}
+        </select></label>
+        <label>Sort<select id="orders-sort">
+          <option value="priority" ${sortMode === ORDER_SORTS.PRIORITY ? "selected" : ""}>Needs attention</option>
+          <option value="oldest" ${sortMode === ORDER_SORTS.OLDEST ? "selected" : ""}>Oldest first</option>
+          <option value="newest" ${sortMode === ORDER_SORTS.NEWEST ? "selected" : ""}>Newest first</option>
+          <option value="customer" ${sortMode === ORDER_SORTS.CUSTOMER ? "selected" : ""}>Customer name</option>
+          <option value="status" ${sortMode === ORDER_SORTS.STATUS ? "selected" : ""}>Status</option>
+        </select></label>
+      </div>
+      ${renderOrderResults(store)}
+    `}
   `;
 }
 
 export function bindOrdersPage(root, store, notify, refresh, packingActions = defaultPackingActions) {
+  root.querySelectorAll("[data-orders-view]").forEach((button) => {
+    button.addEventListener("click", () => {
+      ordersViewMode = button.dataset.ordersView === "analytics" ? "analytics" : "queue";
+      refresh();
+    });
+  });
+  root.querySelector("#orders-analytics-range")?.addEventListener("change", (event) => {
+    analyticsRange = Object.values(ORDER_ANALYTICS_RANGES).includes(event.target.value)
+      ? event.target.value
+      : ORDER_ANALYTICS_RANGES.DAYS_30;
+    refresh();
+  });
+
   const bindOrderActions = () => {
     root.querySelectorAll("[data-order-action]").forEach((button) => {
       button.addEventListener("click", () => openOrderDetails(root, store, button.dataset.orderAction, button, notify, refresh, packingActions));

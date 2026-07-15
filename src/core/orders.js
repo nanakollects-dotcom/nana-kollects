@@ -422,6 +422,187 @@ export function sortOrders(orders = [], sort = ORDER_SORTS.PRIORITY) {
   });
 }
 
+export const ORDER_ANALYTICS_RANGES = {
+  DAYS_7: "7d",
+  DAYS_30: "30d",
+  DAYS_90: "90d",
+  ALL: "all",
+};
+
+function analyticsAverage(samples) {
+  const safeSamples = samples.filter((value) => Number.isFinite(value) && value >= 0);
+  return {
+    averageMs: safeSamples.length ? safeSamples.reduce((sum, value) => sum + value, 0) / safeSamples.length : null,
+    sampleSize: safeSamples.length,
+  };
+}
+
+function analyticsDuration(startValue, endValue) {
+  const start = timestamp(startValue);
+  const end = timestamp(endValue);
+  if (start === null || end === null || end < start) return null;
+  return end - start;
+}
+
+function analyticsRangeStart(range, nowTimestamp) {
+  const days = range === ORDER_ANALYTICS_RANGES.DAYS_7
+    ? 7
+    : range === ORDER_ANALYTICS_RANGES.DAYS_30
+      ? 30
+      : range === ORDER_ANALYTICS_RANGES.DAYS_90
+        ? 90
+        : null;
+  return days === null ? null : nowTimestamp - (days * 24 * 60 * 60 * 1000);
+}
+
+export function getOrderAnalytics(orders = [], orderItems = [], orderEvents = [], options = {}) {
+  const safeOrders = Array.isArray(orders) ? orders : [];
+  const safeItems = Array.isArray(orderItems) ? orderItems : [];
+  const safeEvents = Array.isArray(orderEvents) ? orderEvents : [];
+  const nowTimestamp = timestamp(options.now ?? new Date()) ?? Date.now();
+  const range = Object.values(ORDER_ANALYTICS_RANGES).includes(options.range) ? options.range : ORDER_ANALYTICS_RANGES.DAYS_30;
+  const rangeStart = analyticsRangeStart(range, nowTimestamp);
+  const inRange = (value) => {
+    const valueTimestamp = timestamp(value);
+    return valueTimestamp !== null
+      && valueTimestamp <= nowTimestamp
+      && (rangeStart === null || valueTimestamp >= rangeStart);
+  };
+  const filteredOrders = safeOrders.filter((order) => inRange(order.createdAt));
+  const orderIds = new Set(filteredOrders.map((order) => order.id));
+  const filteredItems = safeItems.filter((item) => orderIds.has(item.orderId));
+  const filteredEvents = safeEvents.filter((event) => orderIds.has(event.orderId) && inRange(event.createdAt));
+  const orderById = new Map(filteredOrders.map((order) => [order.id, order]));
+  const normalizedStatuses = filteredOrders.map((order) => normalizeOrderStatus(order.fulfillmentStatus));
+  const statusCount = (status) => normalizedStatuses.filter((value) => value === status).length;
+  const metrics = getOrderQueueMetrics(filteredOrders, new Date(nowTimestamp));
+
+  const packingStartedAtByOrder = new Map();
+  for (const event of safeEvents) {
+    if (!orderIds.has(event.orderId) || normalizeOrderStatus(event.toStatus) !== ORDER_STATUSES.PACKING) continue;
+    const eventTimestamp = timestamp(event.createdAt);
+    if (eventTimestamp === null) continue;
+    const current = packingStartedAtByOrder.get(event.orderId);
+    if (current === undefined || eventTimestamp < current) packingStartedAtByOrder.set(event.orderId, eventTimestamp);
+  }
+
+  const creationToPacking = [];
+  const packingDuration = [];
+  const packedToShipped = [];
+  const shippedToCompleted = [];
+  const totalFulfillment = [];
+  for (const order of filteredOrders) {
+    const packingStartedAt = packingStartedAtByOrder.get(order.id);
+    const createdAt = timestamp(order.createdAt);
+    if (createdAt !== null && packingStartedAt !== undefined && packingStartedAt >= createdAt) {
+      creationToPacking.push(packingStartedAt - createdAt);
+    }
+    const packingMs = packingStartedAt === undefined ? null : analyticsDuration(packingStartedAt, order.packedAt);
+    if (packingMs !== null) packingDuration.push(packingMs);
+    const shippingMs = analyticsDuration(order.packedAt, order.shippedAt);
+    if (shippingMs !== null) packedToShipped.push(shippingMs);
+    const completionMs = analyticsDuration(order.shippedAt, order.completedAt);
+    if (completionMs !== null) shippedToCompleted.push(completionMs);
+    const totalMs = analyticsDuration(order.createdAt, order.completedAt);
+    if (totalMs !== null) totalFulfillment.push(totalMs);
+  }
+
+  const activeOrders = filteredOrders.filter((order) => normalizeOrderStatus(order.fulfillmentStatus) !== ORDER_STATUSES.COMPLETED);
+  const waitingOver = (hours) => activeOrders.filter((order) => {
+    const createdAt = timestamp(order.createdAt);
+    return createdAt !== null && createdAt <= nowTimestamp && nowTimestamp - createdAt > hours * 60 * 60 * 1000;
+  }).length;
+  let outstandingRequiredQuantity = 0;
+  let uncheckedRequiredQuantity = 0;
+  let packingQuantitySampleSize = 0;
+  for (const item of filteredItems) {
+    const order = orderById.get(item.orderId);
+    const quantity = Number(item.quantity);
+    if (!order || normalizeOrderStatus(order.fulfillmentStatus) === ORDER_STATUSES.COMPLETED || item.packingRequired !== true) continue;
+    if (!Number.isSafeInteger(quantity) || quantity <= 0) continue;
+    outstandingRequiredQuantity += quantity;
+    packingQuantitySampleSize += 1;
+    if (!String(item.checkedAt || "").trim()) uncheckedRequiredQuantity += quantity;
+  }
+
+  const methodGroups = [
+    { key: FULFILLMENT_METHODS.SHIPMENT, label: "Shipment" },
+    { key: FULFILLMENT_METHODS.LOCAL_DELIVERY, label: "Local Delivery" },
+    { key: FULFILLMENT_METHODS.PICKUP, label: "Pickup" },
+    { key: "unknown", label: "Unknown" },
+  ].map(({ key, label }) => {
+    const group = filteredOrders.filter((order) => (normalizeFulfillmentMethod(order.fulfillmentMethod) || "unknown") === key);
+    return { key, label, count: group.length, completed: group.filter((order) => normalizeOrderStatus(order.fulfillmentStatus) === ORDER_STATUSES.COMPLETED).length };
+  });
+
+  const shippingOrders = filteredOrders.filter((order) => [FULFILLMENT_METHODS.SHIPMENT, FULFILLMENT_METHODS.LOCAL_DELIVERY].includes(normalizeFulfillmentMethod(order.fulfillmentMethod)));
+  const courierCounts = new Map();
+  for (const order of shippingOrders) {
+    const courier = String(order.courier || "").trim();
+    if (!courier) continue;
+    courierCounts.set(courier, (courierCounts.get(courier) || 0) + 1);
+  }
+  const byCourier = Array.from(courierCounts, ([courier, count]) => ({ courier, count }))
+    .sort((a, b) => b.count - a.count || a.courier.localeCompare(b.courier));
+  const shippedWithoutTracking = shippingOrders.filter((order) => [ORDER_STATUSES.SHIPPED, ORDER_STATUSES.COMPLETED].includes(normalizeOrderStatus(order.fulfillmentStatus)) && !String(order.trackingNumber || "").trim()).length;
+  const packedAwaitingDetails = shippingOrders.filter((order) => normalizeOrderStatus(order.fulfillmentStatus) === ORDER_STATUSES.PACKED && (!String(order.courier || "").trim() || !String(order.trackingNumber || "").trim())).length;
+  const unknownCourierCount = shippingOrders.filter((order) => !String(order.courier || "").trim()).length;
+
+  const distribution = Object.values(ORDER_STATUSES).map((status) => ({ status, label: getOrderStatusLabel(status), count: statusCount(status) }));
+  const unknownStatusCount = normalizedStatuses.filter((status) => !status).length;
+  if (unknownStatusCount) distribution.push({ status: "unknown", label: "Unknown", count: unknownStatusCount });
+
+  const recentActivity = filteredEvents
+    .slice()
+    .sort((a, b) => timestamp(b.createdAt) - timestamp(a.createdAt))
+    .slice(0, 12)
+    .map((event) => ({
+      id: event.id,
+      orderId: event.orderId,
+      orderReference: String(orderById.get(event.orderId)?.orderNumber || "").trim() || "Order reference unavailable",
+      fromStatus: getOrderStatusLabel(event.fromStatus),
+      toStatus: getOrderStatusLabel(event.toStatus),
+      note: String(event.note || "").trim(),
+      createdAt: event.createdAt,
+    }));
+
+  return {
+    range,
+    orders: filteredOrders,
+    kpis: {
+      total: filteredOrders.length,
+      needsAction: filteredOrders.filter(orderNeedsAction).length,
+      readyToPack: statusCount(ORDER_STATUSES.READY_TO_PACK),
+      packing: statusCount(ORDER_STATUSES.PACKING),
+      packed: statusCount(ORDER_STATUSES.PACKED),
+      shipped: statusCount(ORDER_STATUSES.SHIPPED),
+      completed: statusCount(ORDER_STATUSES.COMPLETED),
+      shippedToday: metrics.shippedToday,
+      completedToday: metrics.completedToday,
+    },
+    performance: {
+      creationToPacking: analyticsAverage(creationToPacking),
+      packingDuration: analyticsAverage(packingDuration),
+      packedToShipped: analyticsAverage(packedToShipped),
+      shippedToCompleted: analyticsAverage(shippedToCompleted),
+      totalFulfillment: analyticsAverage(totalFulfillment),
+    },
+    workload: {
+      active: activeOrders.length,
+      waitingOver24: waitingOver(24),
+      waitingOver48: waitingOver(48),
+      waitingOver72: waitingOver(72),
+      outstandingRequiredQuantity,
+      uncheckedRequiredQuantity,
+      packingQuantitySampleSize,
+    },
+    methods: methodGroups,
+    couriers: { byCourier, shippedWithoutTracking, packedAwaitingDetails, unknownCourierCount },
+    distribution,
+    recentActivity,
+  };
+}
+
 export function validateOrderShipping(order = {}, input = {}) {
   const errors = {};
   const trackingNumber = String(input.trackingNumber || "").trim();

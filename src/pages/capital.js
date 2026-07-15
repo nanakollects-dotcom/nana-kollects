@@ -8,6 +8,11 @@ import { formatDate, formatMoney } from "../components/format.js";
 let editingCapitalId = null;
 let isCapitalModalOpen = false;
 
+export function resetCapitalPageState() {
+  editingCapitalId = null;
+  isCapitalModalOpen = false;
+}
+
 const toDateInput = (value) => new Date(value).toISOString().slice(0, 10);
 const todayDateInput = () => new Date().toISOString().slice(0, 10);
 const escapeText = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({

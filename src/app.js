@@ -1,21 +1,23 @@
-import { friendlyErrorMessage, syncSupabaseStore } from "./services/repository.js";
+import { syncSupabaseStore } from "./services/repository.js";
+import { clearAuthenticatedStore } from "./services/storage.js";
 
 import { getDateRange } from "./core/filters.js";
 import { getStore } from "./services/repository.js";
-import { getCurrentUser, signIn, signUp, signOut } from "./services/authService.js";
+import { createAuthStateCoordinator, getCurrentUser, safeAuthErrorMessage, signIn, signUp, signOut, subscribeToAuthState } from "./services/authService.js";
 
-import { renderDashboardPage, bindDashboardPage } from "./pages/dashboard.js";
+import { renderDashboardPage, bindDashboardPage, resetDashboardPageState } from "./pages/dashboard.js";
 import {
   renderInventoryPage,
   bindInventoryPage,
+  resetInventoryPageState,
   setInventoryCollectionFilter,
   setInventoryViewItem,
 } from "./pages/inventory.js";
-import { renderCapitalPage, bindCapitalPage } from "./pages/capital.js";
-import { renderSalesPage, bindSalesPage } from "./pages/sales.js";
-import { renderOrdersPage, bindOrdersPage } from "./pages/orders.js";
-import { renderCollectionsPage, bindCollectionsPage } from "./pages/collections.js";
-import { renderExpensesPage, bindExpensesPage } from "./pages/expenses.js";
+import { renderCapitalPage, bindCapitalPage, resetCapitalPageState } from "./pages/capital.js";
+import { renderSalesPage, bindSalesPage, resetSalesPageState } from "./pages/sales.js";
+import { renderOrdersPage, bindOrdersPage, resetOrdersPageState } from "./pages/orders.js";
+import { renderCollectionsPage, bindCollectionsPage, resetCollectionsPageState } from "./pages/collections.js";
+import { renderExpensesPage, bindExpensesPage, resetExpensesPageState } from "./pages/expenses.js";
 
 const pages = [
   { id: "dashboard", label: "Dashboard", icon: "dashboard", render: renderDashboardPage, bind: bindDashboardPage },
@@ -60,12 +62,15 @@ let pendingCustomDateRange = {
   startDate: "",
   endDate: "",
 };
+let toastTimer = null;
+let unsubscribeAuthState = null;
 
 function notify(message, isError = false) {
+  if (toastTimer) clearTimeout(toastTimer);
   toast.textContent = message;
   toast.classList.toggle("error", isError);
   toast.classList.add("show");
-  setTimeout(() => toast.classList.remove("show"), 2200);
+  toastTimer = setTimeout(() => toast.classList.remove("show"), 2200);
 }
 
 function setAuthMessage(message, isError = false) {
@@ -79,6 +84,7 @@ async function withButtonBusy(button, busyText, action) {
   const originalText = button.textContent;
   button.dataset.busy = "true";
   button.disabled = true;
+  button.setAttribute("aria-busy", "true");
   button.textContent = busyText;
 
   try {
@@ -86,6 +92,7 @@ async function withButtonBusy(button, busyText, action) {
   } finally {
     button.dataset.busy = "false";
     button.disabled = false;
+    button.removeAttribute("aria-busy");
     button.textContent = originalText;
   }
 }
@@ -165,38 +172,78 @@ function refresh() {
   }
 }
 
-async function showApp() {
-  await syncSupabaseStore();
+function showApp() {
   authScreen.hidden = true;
   appShellWrapper.hidden = false;
   document.body.classList.add("is-authenticated");
   refresh();
 }
 
-function showAuth() {
+function showAuth({ focus = false } = {}) {
   authScreen.hidden = false;
   appShellWrapper.hidden = true;
   document.body.classList.remove("is-authenticated");
+  if (focus) authEmail.focus();
 }
 
-async function initAuth() {
-  try {
-    const user = await getCurrentUser();
+function resetAuthenticatedUiState({ focus = true } = {}) {
+  showAuth();
+  resetDashboardPageState();
+  resetCollectionsPageState();
+  resetInventoryPageState();
+  resetSalesPageState();
+  resetOrdersPageState();
+  resetExpensesPageState();
+  resetCapitalPageState();
 
-    if (user) {
-      setAuthMessage("Loading business data...");
-      await showApp();
-      setAuthMessage("");
-    } else {
-      showAuth();
-    }
-  } catch (error) {
-    console.error(error);
-    showAuth();
+  activePage = "dashboard";
+  pendingOpen = "";
+  customDateRange = { startDate: "", endDate: "" };
+  pendingCustomDateRange = { startDate: "", endDate: "" };
+  timeFilter.value = "all";
+  customStart.value = "";
+  customEnd.value = "";
+  customRange.hidden = true;
+  authPassword.value = "";
+  closeMobileNav();
+  document.querySelectorAll(".modal-backdrop").forEach((modal) => modal.remove());
+  if (topbar.parentElement !== main) main.insertBefore(topbar, view);
+  view.replaceChildren();
+  pageActionSlot.replaceChildren();
+  main.onclick = null;
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = null;
+  toast.textContent = "";
+  toast.classList.remove("show", "error");
+  if (focus) authEmail.focus();
+}
+
+function clearAuthenticatedState(reason) {
+  resetAuthenticatedUiState({ focus: reason !== "initial_session" });
+  clearAuthenticatedStore();
+}
+
+const authCoordinator = createAuthStateCoordinator({
+  onClear: async (reason) => clearAuthenticatedState(reason),
+  onLoad: async () => {
+    setAuthMessage("Loading business data...");
+    await syncSupabaseStore();
+  },
+  onReady: async () => {
+    showApp();
+    setAuthMessage("");
+  },
+  onError: async () => {
     const message = "Could not load business data. Check your connection and try again.";
     setAuthMessage(message, true);
     notify(message, true);
-  }
+  },
+});
+
+async function initAuth() {
+  unsubscribeAuthState = subscribeToAuthState((event, session) => authCoordinator.handle(event, session));
+  const user = await getCurrentUser();
+  await authCoordinator.handle("INITIAL_SESSION", user ? { user } : null);
 }
 
 authForm.addEventListener("submit", async (event) => {
@@ -214,13 +261,14 @@ authForm.addEventListener("submit", async (event) => {
   await withButtonBusy(authForm.querySelector('button[type="submit"]'), "Signing in...", async () => {
     try {
       setAuthMessage("");
-      await signIn(email, password);
-      setAuthMessage("Signed in successfully.");
-      notify("Signed in successfully.");
-      await showApp();
+      const data = await signIn(email, password);
+      await authCoordinator.handle("SIGNED_IN", data?.session);
+      if (!appShellWrapper.hidden) {
+        setAuthMessage("Signed in successfully.");
+        notify("Signed in successfully.");
+      }
     } catch (error) {
-      console.error(error);
-      const message = friendlyErrorMessage(error) || "Sign in failed.";
+      const message = safeAuthErrorMessage(error, "Sign in failed. Please try again.");
       setAuthMessage(message, true);
       notify(message, true);
     }
@@ -240,13 +288,17 @@ signupBtn.addEventListener("click", async () => {
   await withButtonBusy(signupBtn, "Creating...", async () => {
     try {
       setAuthMessage("");
-      await signUp(email, password);
-      setAuthMessage("Account created. Check your email to confirm your account.");
-      notify("Account created. Check your email to confirm your account.");
-      await showApp();
+      const data = await signUp(email, password);
+      if (data?.session) {
+        await authCoordinator.handle("SIGNED_IN", data.session);
+        notify("Account created and signed in.");
+      } else {
+        await authCoordinator.clear("signup_confirmation");
+        setAuthMessage("Account created. Check your email to confirm your account.");
+        notify("Account created. Check your email to confirm your account.");
+      }
     } catch (error) {
-      console.error(error);
-      const message = friendlyErrorMessage(error) || "Account creation failed.";
+      const message = safeAuthErrorMessage(error, "Account creation failed. Please try again.");
       setAuthMessage(message, true);
       notify(message, true);
     }
@@ -255,14 +307,16 @@ signupBtn.addEventListener("click", async () => {
 
 signoutBtn.addEventListener("click", async () => {
   await withButtonBusy(signoutBtn, "Signing out...", async () => {
+    const remoteSignOut = signOut();
+    await authCoordinator.clear("explicit_signout");
     try {
-      await signOut();
-      showAuth();
+      await remoteSignOut;
       setAuthMessage("");
       notify("Signed out.");
-    } catch (error) {
-      console.error(error);
-      notify(friendlyErrorMessage(error) || "Sign out failed.", true);
+    } catch {
+      const message = "Signed out locally. Remote sign-out could not be confirmed.";
+      setAuthMessage(message, true);
+      notify(message, true);
     }
   });
 });
@@ -308,7 +362,9 @@ customApply.addEventListener("click", () => {
   refresh();
 });
 
-window.addEventListener("store:changed", refresh);
+window.addEventListener("store:changed", () => {
+  if (!appShellWrapper.hidden) refresh();
+});
 
 window.addEventListener("inventory:filter-collection", (event) => {
   setInventoryCollectionFilter(event.detail);
@@ -336,4 +392,6 @@ menuToggle.addEventListener("click", () => {
 
 navOverlay.addEventListener("click", closeMobileNav);
 
-initAuth();
+window.addEventListener("beforeunload", () => unsubscribeAuthState?.(), { once: true });
+
+initAuth().catch(() => authCoordinator.clear("initial_session"));

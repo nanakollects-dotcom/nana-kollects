@@ -39,6 +39,7 @@ let ordersViewMode = "queue";
 let analyticsRange = ORDER_ANALYTICS_RANGES.DAYS_30;
 let closeOrderDetailsModal = null;
 let activeOrderWorkspace = null;
+let ordersWorkspaceGeneration = 0;
 const pendingStartOrderIds = new Set();
 const pendingPackingItemIds = new Set();
 const pendingMarkPackedOrderIds = new Set();
@@ -48,6 +49,29 @@ const packingFeedbackByOrder = new Map();
 const shippingFeedbackByOrder = new Map();
 const completionFeedbackByOrder = new Map();
 const shippingDraftByOrder = new Map();
+
+export function resetOrdersPageState() {
+  ordersWorkspaceGeneration += 1;
+  closeOrderDetailsModal?.(false);
+  closeOrderDetailsModal = null;
+  activeOrderWorkspace = null;
+  searchTerm = "";
+  statusFilter = ORDER_QUEUE_FILTERS.NEEDS_ACTION;
+  methodFilter = ORDER_QUEUE_FILTERS.ALL;
+  sortMode = ORDER_SORTS.PRIORITY;
+  metricFilter = "";
+  ordersViewMode = "queue";
+  analyticsRange = ORDER_ANALYTICS_RANGES.DAYS_30;
+  pendingStartOrderIds.clear();
+  pendingPackingItemIds.clear();
+  pendingMarkPackedOrderIds.clear();
+  pendingMarkShippedOrderIds.clear();
+  pendingMarkCompletedOrderIds.clear();
+  packingFeedbackByOrder.clear();
+  shippingFeedbackByOrder.clear();
+  completionFeedbackByOrder.clear();
+  shippingDraftByOrder.clear();
+}
 
 const defaultPackingActions = {
   markOrderCompleted,
@@ -1304,6 +1328,7 @@ function openOrderDetails(root, store, orderId, trigger, notify, refresh, packin
       const items = itemsAvailable ? store.orderItems.filter((item) => item.orderId === orderId) : [];
       if (pendingStartOrderIds.has(orderId) || !canStartOrderPacking(order, items, itemsAvailable)) return;
 
+      const workspaceGeneration = ordersWorkspaceGeneration;
       pendingStartOrderIds.add(orderId);
       if (activeOrderWorkspace?.orderId === orderId) activeOrderWorkspace.focus = { kind: "start" };
       packingFeedbackByOrder.set(orderId, { tone: "pending", message: "Starting packing..." });
@@ -1311,6 +1336,7 @@ function openOrderDetails(root, store, orderId, trigger, notify, refresh, packin
 
       try {
         const syncedStore = await packingActions.startOrderPacking(orderId);
+        if (workspaceGeneration !== ordersWorkspaceGeneration) return;
         const savedOrder = Array.isArray(syncedStore?.orders)
           ? syncedStore.orders.find((entry) => entry.id === orderId)
           : null;
@@ -1325,11 +1351,13 @@ function openOrderDetails(root, store, orderId, trigger, notify, refresh, packin
           notify("Packing started.");
         }
       } catch (error) {
+        if (workspaceGeneration !== ordersWorkspaceGeneration) return;
         const feedback = packingFailureFeedback(error);
         packingFeedbackByOrder.set(orderId, feedback);
         notify(feedback.message, true);
       } finally {
         pendingStartOrderIds.delete(orderId);
+        if (workspaceGeneration !== ordersWorkspaceGeneration) return;
         if (closeOrderDetailsModal === close && !backdrop?.isConnected) close(false);
         if (activeOrderWorkspace?.orderId !== orderId) packingFeedbackByOrder.delete(orderId);
         refresh();
@@ -1343,6 +1371,7 @@ function openOrderDetails(root, store, orderId, trigger, notify, refresh, packin
       const checklistPending = items.some((item) => pendingPackingItemIds.has(item.id));
       if (pendingMarkPackedOrderIds.has(orderId) || checklistPending || !canMarkOrderPacked(order, items, itemsAvailable)) return;
 
+      const workspaceGeneration = ordersWorkspaceGeneration;
       const previousEventIds = new Set(
         (Array.isArray(store.orderEvents) ? store.orderEvents : [])
           .filter((event) => event.orderId === orderId)
@@ -1355,6 +1384,7 @@ function openOrderDetails(root, store, orderId, trigger, notify, refresh, packin
 
       try {
         const syncedStore = await packingActions.markOrderPacked(orderId);
+        if (workspaceGeneration !== ordersWorkspaceGeneration) return;
         const savedOrder = Array.isArray(syncedStore?.orders)
           ? syncedStore.orders.find((entry) => entry.id === orderId)
           : null;
@@ -1380,11 +1410,13 @@ function openOrderDetails(root, store, orderId, trigger, notify, refresh, packin
           notify("Order marked Packed.");
         }
       } catch (error) {
+        if (workspaceGeneration !== ordersWorkspaceGeneration) return;
         const feedback = packingFailureFeedback(error);
         packingFeedbackByOrder.set(orderId, feedback);
         notify(feedback.message, true);
       } finally {
         pendingMarkPackedOrderIds.delete(orderId);
+        if (workspaceGeneration !== ordersWorkspaceGeneration) return;
         if (closeOrderDetailsModal === close && !backdrop?.isConnected) close(false);
         if (activeOrderWorkspace?.orderId !== orderId) packingFeedbackByOrder.delete(orderId);
         refresh();
@@ -1439,6 +1471,7 @@ function openOrderDetails(root, store, orderId, trigger, notify, refresh, packin
         return;
       }
 
+      const workspaceGeneration = ordersWorkspaceGeneration;
       const previousEventIds = new Set(
         (Array.isArray(store.orderEvents) ? store.orderEvents : [])
           .filter((event) => event.orderId === orderId)
@@ -1451,6 +1484,7 @@ function openOrderDetails(root, store, orderId, trigger, notify, refresh, packin
 
       try {
         const syncedStore = await packingActions.markOrderShipped(orderId, input);
+        if (workspaceGeneration !== ordersWorkspaceGeneration) return;
         const savedOrder = Array.isArray(syncedStore?.orders)
           ? syncedStore.orders.find((entry) => entry.id === orderId)
           : null;
@@ -1485,11 +1519,13 @@ function openOrderDetails(root, store, orderId, trigger, notify, refresh, packin
           notify("Order marked Shipped.");
         }
       } catch (error) {
+        if (workspaceGeneration !== ordersWorkspaceGeneration) return;
         const feedback = packingFailureFeedback(error);
         shippingFeedbackByOrder.set(orderId, feedback);
         notify(feedback.message, true);
       } finally {
         pendingMarkShippedOrderIds.delete(orderId);
+        if (workspaceGeneration !== ordersWorkspaceGeneration) return;
         if (closeOrderDetailsModal === close && !backdrop?.isConnected) close(false);
         if (activeOrderWorkspace?.orderId !== orderId) shippingFeedbackByOrder.delete(orderId);
         refresh();
@@ -1501,6 +1537,7 @@ function openOrderDetails(root, store, orderId, trigger, notify, refresh, packin
       const input = { completedAt: new Date().toISOString(), note: "" };
       if (pendingMarkCompletedOrderIds.has(orderId) || !canMarkOrderCompleted(order, input)) return;
 
+      const workspaceGeneration = ordersWorkspaceGeneration;
       const previousEventIds = new Set(
         (Array.isArray(store.orderEvents) ? store.orderEvents : [])
           .filter((event) => event.orderId === orderId)
@@ -1513,6 +1550,7 @@ function openOrderDetails(root, store, orderId, trigger, notify, refresh, packin
 
       try {
         const syncedStore = await packingActions.markOrderCompleted(orderId, input);
+        if (workspaceGeneration !== ordersWorkspaceGeneration) return;
         const savedOrder = Array.isArray(syncedStore?.orders)
           ? syncedStore.orders.find((entry) => entry.id === orderId)
           : null;
@@ -1539,11 +1577,13 @@ function openOrderDetails(root, store, orderId, trigger, notify, refresh, packin
           notify("Order marked Completed.");
         }
       } catch (error) {
+        if (workspaceGeneration !== ordersWorkspaceGeneration) return;
         const feedback = packingFailureFeedback(error);
         completionFeedbackByOrder.set(orderId, feedback);
         notify(feedback.message, true);
       } finally {
         pendingMarkCompletedOrderIds.delete(orderId);
+        if (workspaceGeneration !== ordersWorkspaceGeneration) return;
         if (closeOrderDetailsModal === close && !backdrop?.isConnected) close(false);
         if (activeOrderWorkspace?.orderId !== orderId) completionFeedbackByOrder.delete(orderId);
         refresh();
@@ -1561,6 +1601,7 @@ function openOrderDetails(root, store, orderId, trigger, notify, refresh, packin
         }
 
         const checked = checkbox.checked;
+        const workspaceGeneration = ordersWorkspaceGeneration;
         pendingPackingItemIds.add(itemId);
         if (activeOrderWorkspace?.orderId === orderId) activeOrderWorkspace.focus = { kind: "item", itemId };
         packingFeedbackByOrder.set(orderId, { tone: "pending", message: "Saving checklist item..." });
@@ -1568,6 +1609,7 @@ function openOrderDetails(root, store, orderId, trigger, notify, refresh, packin
 
         try {
           const syncedStore = await packingActions.setOrderItemPacked(orderId, itemId, checked);
+          if (workspaceGeneration !== ordersWorkspaceGeneration) return;
           const savedOrder = Array.isArray(syncedStore?.orders)
             ? syncedStore.orders.find((entry) => entry.id === orderId)
             : null;
@@ -1586,11 +1628,13 @@ function openOrderDetails(root, store, orderId, trigger, notify, refresh, packin
             notify("Checklist item saved.");
           }
         } catch (error) {
+          if (workspaceGeneration !== ordersWorkspaceGeneration) return;
           const feedback = packingFailureFeedback(error);
           packingFeedbackByOrder.set(orderId, feedback);
           notify(feedback.message, true);
         } finally {
           pendingPackingItemIds.delete(itemId);
+          if (workspaceGeneration !== ordersWorkspaceGeneration) return;
           if (closeOrderDetailsModal === close && !backdrop?.isConnected) close(false);
           if (activeOrderWorkspace?.orderId !== orderId) packingFeedbackByOrder.delete(orderId);
           refresh();

@@ -9,6 +9,11 @@ import { formatDate, formatMoney } from "../components/format.js";
 let editingSaleId = null;
 let isSaleModalOpen = false;
 
+export function resetSalesPageState() {
+  editingSaleId = null;
+  isSaleModalOpen = false;
+}
+
 const escapeText = (value) =>
   String(value ?? "").replace(/[&<>"']/g, (char) => ({
     "&": "&amp;",

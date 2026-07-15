@@ -6,6 +6,11 @@ import { formatDate, formatMoney, formatPercent } from "../components/format.js"
 let isCollectionModalOpen = false;
 let editingCollectionId = null;
 
+export function resetCollectionsPageState() {
+  isCollectionModalOpen = false;
+  editingCollectionId = null;
+}
+
 const escapeText = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
   "&": "&amp;",
   "<": "&lt;",

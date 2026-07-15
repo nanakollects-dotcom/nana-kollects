@@ -44,6 +44,11 @@ import { importSupabaseBackup } from "../services/repository.js";
 let csvImportPreview = null;
 let csvImportResult = null;
 
+export function resetDashboardPageState() {
+  csvImportPreview = null;
+  csvImportResult = null;
+}
+
 const escapeText = (value) =>
   String(value ?? "").replace(/[&<>"']/g, (char) => ({
     "&": "&amp;",

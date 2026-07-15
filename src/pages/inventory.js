@@ -31,6 +31,20 @@ let paymentRequestItemId = null;
 let paymentConfigOpen = false;
 let paidRequestId = null;
 
+export function resetInventoryPageState() {
+  editingId = null;
+  isModalOpen = false;
+  searchTerm = "";
+  statusFilter = "all";
+  collectionFilter = "all";
+  ageFilter = "all";
+  costFilter = "all";
+  inventoryDraft = null;
+  paymentRequestItemId = null;
+  paymentConfigOpen = false;
+  paidRequestId = null;
+}
+
 const escapeText = (value) =>
   String(value ?? "").replace(/[&<>"']/g, (char) => ({
     "&": "&amp;",

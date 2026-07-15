@@ -6,6 +6,7 @@ const CAPITAL_ADDED = "Capital Added";
 const CAPITAL_WITHDRAWAL = "Withdrawal";
 
 let activeStore = null;
+let authenticatedStoreGeneration = 0;
 
 export const emptyStore = () => ({
   inventory: [],
@@ -95,12 +96,44 @@ export function loadStore() {
   return activeStore ? structuredClone(activeStore) : emptyStore();
 }
 
-export function replaceStore(nextStore) {
+export function getAuthenticatedStoreGeneration() {
+  return authenticatedStoreGeneration;
+}
+
+function dispatchStoreChanged(store) {
+  if (typeof window === "undefined" || typeof window.dispatchEvent !== "function") return;
+  const event = typeof CustomEvent === "function"
+    ? new CustomEvent("store:changed", { detail: store })
+    : new Event("store:changed");
+  window.dispatchEvent(event);
+}
+
+export function replaceStore(nextStore, expectedGeneration = authenticatedStoreGeneration) {
+  if (expectedGeneration !== authenticatedStoreGeneration) return loadStore();
   const cleanStore = normalizeStore(nextStore);
   activeStore = cleanStore;
   // Supabase is the source of truth; localStorage is only a browser-side cache/export fallback.
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(cleanStore));
-  window.dispatchEvent(new CustomEvent("store:changed", { detail: cleanStore }));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(cleanStore));
+  } catch {
+    // The authenticated in-memory store remains usable when browser storage is unavailable.
+  }
+  dispatchStoreChanged(cleanStore);
+  return cleanStore;
+}
+
+export function clearAuthenticatedStore() {
+  authenticatedStoreGeneration += 1;
+  activeStore = emptyStore();
+
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // Local cleanup must continue even when browser storage is unavailable.
+  }
+
+  const cleanStore = loadStore();
+  dispatchStoreChanged(cleanStore);
   return cleanStore;
 }
 

@@ -7,6 +7,11 @@ import { formatDate, formatMoney } from "../components/format.js";
 let editingExpenseId = null;
 let isExpenseModalOpen = false;
 
+export function resetExpensesPageState() {
+  editingExpenseId = null;
+  isExpenseModalOpen = false;
+}
+
 const toDateInput = (value) => new Date(value).toISOString().slice(0, 10);
 const todayDateInput = () => new Date().toISOString().slice(0, 10);
 const escapeText = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({

@@ -1,4 +1,4 @@
-import { loadStore, replaceStore } from "./storage.js";
+import { getAuthenticatedStoreGeneration, loadStore, replaceStore } from "./storage.js";
 import {
   loadSupabaseOrders,
   markSupabaseOrderCompleted,
@@ -175,7 +175,8 @@ async function runRepositoryOperation(operation) {
 }
 
 export async function syncSupabaseStore() {
-  return runRepositoryOperation(async () => replaceStore(await loadSupabaseStore()));
+  const expectedGeneration = getAuthenticatedStoreGeneration();
+  return runRepositoryOperation(async () => replaceStore(await loadSupabaseStore(), expectedGeneration));
 }
 
 export async function addSupabaseCollection(input) {

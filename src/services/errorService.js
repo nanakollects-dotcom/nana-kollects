@@ -60,6 +60,7 @@ const SAFE_MESSAGE_BY_EXACT_TEXT = new Map([
   ["check every required order item before continuing.", "Check every required Order Item before continuing."],
   ["check every required order item before marking packed.", "Check every required Order Item before marking Packed."],
   ["only packing orders can be marked packed.", "This Order is no longer eligible to be marked Packed."],
+  ["only packed orders can be reopened for packing.", "This Order is no longer eligible to be reopened for packing."],
   ["only packed orders can be marked shipped.", "This Order is no longer eligible to be marked Shipped."],
   ["pickup orders cannot be marked shipped.", "Pickup Orders cannot be marked Shipped."],
   ["shipping address is required before shipping.", "Shipping address is required before shipping."],
@@ -112,25 +113,51 @@ export class SafeUserError extends Error {
   }
 }
 
+function safeProperty(error, property) {
+  try {
+    return error?.[property];
+  } catch {
+    return undefined;
+  }
+}
+
+function isSafeUserError(error) {
+  try {
+    return error instanceof SafeUserError;
+  } catch {
+    return false;
+  }
+}
+
 function errorText(error) {
   if (typeof error === "string") return error.trim().toLowerCase();
-  if (error && typeof error.message === "string") return error.message.trim().toLowerCase();
+  const message = safeProperty(error, "message");
+  if (typeof message === "string") return message.trim().toLowerCase();
   return "";
 }
 
 function errorCode(error) {
-  return error && typeof error.code === "string" ? error.code.trim().toUpperCase() : "";
+  const code = safeProperty(error, "code");
+  return typeof code === "string" ? code.trim().toUpperCase() : "";
+}
+
+function errorStatus(error) {
+  const status = safeProperty(error, "status");
+  if (typeof status === "number" && Number.isFinite(status)) return status;
+  if (typeof status === "string" && /^\d+$/.test(status.trim())) return Number(status);
+  return null;
 }
 
 export function getSafeErrorCategory(error) {
-  if (error instanceof SafeUserError) return error.category;
+  if (isSafeUserError(error)) return error.category;
   const message = errorText(error);
   const code = errorCode(error);
+  const status = errorStatus(error);
 
   if (message.includes("failed to fetch") || message.includes("fetch failed") || message.includes("network") || message.includes("timeout")) return "network";
   if (message.includes("jwt") || message.includes("session") || message.includes("not authenticated") || message.includes("no authenticated user") || code === "PGRST301") return "session";
   if (message.includes("invalid login credentials") || message.includes("email not confirmed")) return "auth";
-  if (message.includes("rate limit") || message.includes("too many requests")) return "rate_limit";
+  if (status === 429 || message.includes("rate limit") || message.includes("too many requests")) return "rate_limit";
   if (message.includes("duplicate key") || message.includes("unique constraint") || code === "23505") return "duplicate";
   if (message.includes("row-level security") || message.includes("permission denied") || code === "42501") return "permission";
   if (SAFE_MESSAGE_BY_EXACT_TEXT.has(message)) return "business";
@@ -138,7 +165,7 @@ export function getSafeErrorCategory(error) {
 }
 
 export function getSafeUserError(error, context = "save") {
-  if (error instanceof SafeUserError) return error.message;
+  if (isSafeUserError(error)) return error.message;
   const message = errorText(error);
   const category = getSafeErrorCategory(error);
   const fallback = CONTEXT_FALLBACKS[context] || "Something went wrong. Please try again.";
@@ -168,7 +195,7 @@ export function getSafeUserError(error, context = "save") {
 }
 
 export function createSafeUserError(error, context = "save") {
-  if (error instanceof SafeUserError) return error;
+  if (isSafeUserError(error)) return error;
   return new SafeUserError(getSafeUserError(error, context), getSafeErrorCategory(error));
 }
 

@@ -1,5 +1,5 @@
 import { getAuthenticatedStoreGeneration, loadStore, replaceStore } from "./storage.js";
-import { createSafeUserError, getSafeUserError, logSafeError } from "./errorService.js";
+import { createSafeUserError, getSafeErrorCategory, getSafeUserError, logSafeError, SafeUserError } from "./errorService.js";
 import {
   loadSupabaseOrders,
   markSupabaseOrderCompleted,
@@ -94,7 +94,10 @@ async function runOrderOperation(operation) {
     return await syncSupabaseStore();
   } catch (error) {
     logSafeError("order_refresh", error);
-    const recoveryError = createSafeUserError(error, "order_refresh");
+    const recoveryError = new SafeUserError(
+      getSafeUserError(null, "order_refresh"),
+      getSafeErrorCategory(error),
+    );
     recoveryError.mutationSucceeded = true;
     throw recoveryError;
   }

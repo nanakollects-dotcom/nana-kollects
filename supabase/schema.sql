@@ -2040,7 +2040,7 @@ grant select on public.payment_request_items to authenticated;
 grant select on public.inventory_reservations to authenticated;
 grant select on public.sale_items to authenticated;
 
-create or replace function public.create_multi_item_payment_request_v1(
+create or replace function public.create_payment_request_v2(
   p_items jsonb,
   p_customer_name text,
   p_customer_contact text,
@@ -2532,10 +2532,10 @@ begin
 end;
 $$;
 
-revoke all on function public.create_multi_item_payment_request_v1(jsonb, text, text, text, numeric, text, text, numeric, date, text, jsonb) from public, anon, authenticated;
+revoke all on function public.create_payment_request_v2(jsonb, text, text, text, numeric, text, text, numeric, date, text, jsonb) from public, anon, authenticated;
 revoke all on function public.cancel_multi_item_payment_request_v1(uuid) from public, anon, authenticated;
 revoke all on function public.mark_multi_item_payment_request_paid_v1(uuid, text) from public, anon, authenticated;
-grant execute on function public.create_multi_item_payment_request_v1(jsonb, text, text, text, numeric, text, text, numeric, date, text, jsonb) to authenticated;
+grant execute on function public.create_payment_request_v2(jsonb, text, text, text, numeric, text, text, numeric, date, text, jsonb) to authenticated;
 grant execute on function public.cancel_multi_item_payment_request_v1(uuid) to authenticated;
 grant execute on function public.mark_multi_item_payment_request_paid_v1(uuid, text) to authenticated;
 

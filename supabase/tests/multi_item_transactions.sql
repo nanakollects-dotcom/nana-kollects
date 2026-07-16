@@ -51,7 +51,7 @@ set local role authenticated;
 do $$
 begin
   begin
-    perform public.create_multi_item_payment_request_v1(
+    perform public.create_payment_request_v2(
       '[]'::jsonb, 'Customer', '09170000000', '', 0, 'pickup', '', 0,
       current_date + 1, '', '{}'::jsonb
     );
@@ -61,7 +61,7 @@ begin
   end;
 
   begin
-    perform public.create_multi_item_payment_request_v1(
+    perform public.create_payment_request_v2(
       '{}'::jsonb, 'Customer', '09170000000', '', 0, 'pickup', '', 0,
       current_date + 1, '', '{}'::jsonb
     );
@@ -71,7 +71,7 @@ begin
   end;
 
   begin
-    perform public.create_multi_item_payment_request_v1(
+    perform public.create_payment_request_v2(
       '[{"inventory_item_id":"not-an-id","unit_price":10}]'::jsonb,
       'Customer', '09170000000', '', 0, 'pickup', '', 0,
       current_date + 1, '', '{}'::jsonb
@@ -82,7 +82,7 @@ begin
   end;
 
   begin
-    perform public.create_multi_item_payment_request_v1(
+    perform public.create_payment_request_v2(
       '[{"inventory_item_id":"7a777777-7777-4777-8777-777777777777","unit_price":-1}]'::jsonb,
       'Customer', '09170000000', '', 0, 'pickup', '', 0,
       current_date + 1, '', '{}'::jsonb
@@ -93,7 +93,7 @@ begin
   end;
 
   begin
-    perform public.create_multi_item_payment_request_v1(
+    perform public.create_payment_request_v2(
       '[{"inventory_item_id":"7a777777-7777-4777-8777-777777777777","unit_price":55},{"inventory_item_id":"7a777777-7777-4777-8777-777777777777","unit_price":55}]'::jsonb,
       'Customer', '09170000000', '', 0, 'pickup', '', 0,
       current_date + 1, '', '{}'::jsonb
@@ -104,7 +104,7 @@ begin
   end;
 
   begin
-    perform public.create_multi_item_payment_request_v1(
+    perform public.create_payment_request_v2(
       '[{"inventory_item_id":"7a999999-9999-4999-8999-999999999999","unit_price":20}]'::jsonb,
       'Customer', '09170000000', '', 0, 'pickup', '', 0,
       current_date + 1, '', '{}'::jsonb
@@ -120,7 +120,7 @@ $$;
 select set_config(
   'test.single_request',
   (
-    public.create_multi_item_payment_request_v1(
+    public.create_payment_request_v2(
       '[{"inventory_item_id":"7a777777-7777-4777-8777-777777777777","unit_price":55}]'::jsonb,
       'Single Customer', '09170000001', '', 0, 'pickup', '', 0,
       current_date + 1, '', '{}'::jsonb
@@ -200,7 +200,7 @@ $$;
 select set_config(
   'test.paid_request',
   (
-    public.create_multi_item_payment_request_v1(
+    public.create_payment_request_v2(
       '[{"inventory_item_id":"7a111111-1111-4111-8111-111111111111","unit_price":100},{"inventory_item_id":"7a222222-2222-4222-8222-222222222222","unit_price":150}]'::jsonb,
       'Paid Customer', '09170000002', 'Safe Address', 25, 'fee_now', 'J&T', 25,
       current_date + 1, '', '{}'::jsonb
@@ -255,7 +255,7 @@ select public.mark_order_packed((select id from public.orders where source_payme
 select set_config(
   'test.cancel_request',
   (
-    public.create_multi_item_payment_request_v1(
+    public.create_payment_request_v2(
       '[{"inventory_item_id":"7a333333-3333-4333-8333-333333333333","unit_price":75},{"inventory_item_id":"7a444444-4444-4444-8444-444444444444","unit_price":85}]'::jsonb,
       'Cancel Customer', '09170000003', '', 0, 'pickup', '', 10,
       current_date + 1, '', '{}'::jsonb
@@ -283,7 +283,7 @@ $$;
 select set_config(
   'test.max_request',
   (
-    public.create_multi_item_payment_request_v1(
+    public.create_payment_request_v2(
       (
         select jsonb_agg(jsonb_build_object('inventory_item_id', id, 'unit_price', price) order by sku)
         from (select id, price, sku from public.inventory_items where sku like 'MAX-%' order by sku limit 50) chosen
@@ -308,7 +308,7 @@ select public.cancel_multi_item_payment_request_v1(current_setting('test.max_req
 do $$
 begin
   begin
-    perform public.create_multi_item_payment_request_v1(
+    perform public.create_payment_request_v2(
       (
         select jsonb_agg(jsonb_build_object('inventory_item_id', id, 'unit_price', price) order by sku)
         from public.inventory_items where sku like 'MAX-%'
@@ -379,7 +379,7 @@ begin
        'FAIL-' || v_number || '-B', 'Failure stage B', 15, 30, 'Available');
 
     v_request_id := (
-      public.create_multi_item_payment_request_v1(
+      public.create_payment_request_v2(
         jsonb_build_array(
           jsonb_build_object('inventory_item_id', v_item_a, 'unit_price', 20),
           jsonb_build_object('inventory_item_id', v_item_b, 'unit_price', 30)

@@ -9,6 +9,12 @@ const inRange = (items, filters = {}) =>
   items.filter((item) => isWithinRange(item.date || item.createdAt || item.soldAt, filters));
 const activeInventory = (item) => item.status === STATUSES.AVAILABLE || item.status === STATUSES.RESERVED;
 const cashExpense = (expense) => expense.category !== "Write-Off";
+const financialSales = (store) => Array.isArray(store.saleHeaders) && store.saleHeaders.length
+  ? store.saleHeaders
+  : store.sales || [];
+const merchandiseRevenue = (sale) => Number(sale.merchandiseRevenue ?? sale.price ?? 0);
+const totalCollected = (sale) => Number(sale.totalPaid ?? sale.price ?? 0);
+const aggregateCost = (sale) => sale.aggregateCogs ?? sale.cost;
 
 const ageInDays = (value, asOf = new Date()) => {
   if (!value) return 0;
@@ -69,11 +75,11 @@ export function getCollectionHealth(collection, asOf = new Date()) {
 }
 
 export function getRevenue(store, filters = {}) {
-  return toMoney(inRange(store.sales, filters).reduce((sum, sale) => sum + Number(sale.price || 0), 0));
+  return toMoney(inRange(financialSales(store), filters).reduce((sum, sale) => sum + merchandiseRevenue(sale), 0));
 }
 
 export function getCOGS(store, filters = {}) {
-  return toMoney(inRange(store.sales, filters).reduce((sum, sale) => sum + knownCostOrZero(sale.cost), 0));
+  return toMoney(inRange(financialSales(store), filters).reduce((sum, sale) => sum + knownCostOrZero(aggregateCost(sale)), 0));
 }
 
 export function getGrossProfit(store, filters = {}) {
@@ -114,9 +120,9 @@ export function getTotalInventoryCost(store) {
 
 export function getSalesCollected(store, filters = {}) {
   return toMoney(
-    inRange(store.sales, filters)
+    inRange(financialSales(store), filters)
       .filter((sale) => sale.paymentStatus === PAYMENT_STATUSES.PAID)
-      .reduce((sum, sale) => sum + Number(sale.price || 0), 0),
+      .reduce((sum, sale) => sum + totalCollected(sale), 0),
   );
 }
 
@@ -142,7 +148,7 @@ export function getCostPendingCount(store) {
 }
 
 export function getSalesCostPendingCount(store, filters = {}) {
-  return countPendingCosts(inRange(store.sales, filters));
+  return countPendingCosts(inRange(financialSales(store), filters).map((sale) => ({ cost: aggregateCost(sale) })));
 }
 
 export function getCapitalRecoverySummary(store, filters = {}) {
@@ -197,11 +203,14 @@ export function getAvailableItemsCount(store) {
 }
 
 export function getSoldItemsCount(store, filters = {}) {
-  return getFinancialSalesCount(store, filters);
+  return inRange(financialSales(store), filters).reduce(
+    (count, sale) => count + (sale.items?.reduce((sum, item) => sum + Number(item.quantity || 1), 0) || 1),
+    0,
+  );
 }
 
 export function getFinancialSalesCount(store, filters = {}) {
-  return inRange(store.sales, filters).length;
+  return inRange(financialSales(store), filters).length;
 }
 
 export function getReservedItemsCount(store) {
@@ -213,7 +222,7 @@ export function getWrittenOffItemsCount(store) {
 }
 
 export function getPlatformStats(store, filters = {}) {
-  return inRange(store.sales, filters).reduce((acc, sale) => {
+  return inRange(financialSales(store), filters).reduce((acc, sale) => {
     const platform = sale.platform || "Unknown";
 
     if (!acc[platform]) {
@@ -226,9 +235,11 @@ export function getPlatformStats(store, filters = {}) {
     }
 
     acc[platform].orders += 1;
-    acc[platform].revenue = toMoney(acc[platform].revenue + Number(sale.price || 0));
-    if (hasKnownCost(sale.cost) && sale.profit !== null && sale.profit !== undefined && acc[platform].costPendingCount === 0) {
-      acc[platform].profit = toMoney(acc[platform].profit + Number(sale.profit || 0));
+    acc[platform].revenue = toMoney(acc[platform].revenue + merchandiseRevenue(sale));
+    const cost = aggregateCost(sale);
+    const profit = sale.aggregateProfit ?? sale.profit;
+    if (hasKnownCost(cost) && profit !== null && profit !== undefined && acc[platform].costPendingCount === 0) {
+      acc[platform].profit = toMoney(acc[platform].profit + Number(profit || 0));
     } else {
       acc[platform].costPendingCount += 1;
       acc[platform].profit = null;
@@ -602,7 +613,7 @@ export function getMonthlyPerformance(store, filters = {}) {
     costPendingCount: getSalesCostPendingCount(store, filters),
     roi: getROI(store, filters),
     salesRecordsCount,
-    soldItemsCount: salesRecordsCount,
+    soldItemsCount: getSoldItemsCount(store, filters),
   };
 }
 
@@ -631,9 +642,9 @@ export function getHeroInsights(store, filters = {}) {
 
 export function getPaidRevenue(store, filters = {}) {
   return toMoney(
-    inRange(store.sales, filters)
+    inRange(financialSales(store), filters)
       .filter((sale) => sale.paymentStatus === PAYMENT_STATUSES.PAID)
-      .reduce((sum, sale) => sum + Number(sale.price || 0), 0),
+      .reduce((sum, sale) => sum + merchandiseRevenue(sale), 0),
   );
 }
 

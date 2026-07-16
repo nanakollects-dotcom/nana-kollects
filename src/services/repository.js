@@ -103,6 +103,25 @@ async function runOrderOperation(operation) {
   }
 }
 
+async function runPaymentRequestOperation(operation, refreshFailureMessage) {
+  let mutationResult;
+  try {
+    mutationResult = await operation();
+  } catch (error) {
+    logSafeError("payment_request_mutation", error);
+    throw createSafeUserError(error, "payment_request");
+  }
+
+  try {
+    return { mutationResult, store: await syncSupabaseStore() };
+  } catch (error) {
+    logSafeError("payment_request_refresh", error);
+    const recoveryError = new SafeUserError(refreshFailureMessage, getSafeErrorCategory(error));
+    recoveryError.mutationSucceeded = true;
+    throw recoveryError;
+  }
+}
+
 export function startOrderPacking(orderId) {
   return runOrderOperation(() => startSupabaseOrderPacking(orderId));
 }
@@ -205,28 +224,30 @@ export async function savePaymentConfiguration(input) {
 }
 
 export async function addPaymentRequest(input) {
-  return runRepositoryOperation(async () => {
-    const request = await createSupabasePaymentRequest(input);
-    const store = await syncSupabaseStore();
-    return {
-      request: store.paymentRequests.find((entry) => entry.id === request.id) || request,
-      store,
-    };
-  });
+  const { mutationResult: request, store } = await runPaymentRequestOperation(
+    () => createSupabasePaymentRequest(input),
+    "The Payment Request was created, but the latest data could not be reloaded. Refresh the page to confirm it.",
+  );
+  return {
+    request: store.paymentRequests.find((entry) => entry.id === request.id) || request,
+    store,
+  };
 }
 
 export async function markPaymentRequestPaid(requestId, paymentMethod) {
-  return runRepositoryOperation(async () => {
-    await markSupabasePaymentRequestPaid(requestId, paymentMethod);
-    return syncSupabaseStore();
-  });
+  const { store } = await runPaymentRequestOperation(
+    () => markSupabasePaymentRequestPaid(requestId, paymentMethod),
+    "The payment was saved, but the latest data could not be reloaded. Refresh the page to confirm it.",
+  );
+  return store;
 }
 
 export async function cancelPaymentRequest(requestId) {
-  return runRepositoryOperation(async () => {
-    await cancelSupabasePaymentRequest(requestId);
-    return syncSupabaseStore();
-  });
+  const { store } = await runPaymentRequestOperation(
+    () => cancelSupabasePaymentRequest(requestId),
+    "The Payment Request was cancelled, but the latest data could not be reloaded. Refresh the page to confirm it.",
+  );
+  return store;
 }
 
 export async function removeSupabaseInventoryItem(itemId) {

@@ -19,6 +19,7 @@ import { calculatePaymentRequestTotal, COURIER_OPTIONS, displayCourier, isPaymen
 import { createPaymentRequestPdf, downloadPaymentRequestPdf } from "../services/paymentRequestPdf.js";
 import { createPaymentRequestImage, sharePaymentRequestImage } from "../services/paymentRequestImage.js";
 import { getSafeUserError } from "../services/errorService.js";
+import { paymentRequestIncludesItem } from "../core/transactions.js";
 
 let editingId = null;
 let isModalOpen = false;
@@ -120,7 +121,7 @@ const canRunStatusAction = (current, next) => {
 const actionDisabled = (current, next) => canRunStatusAction(current, next) ? "" : "disabled";
 
 const hasPendingPaymentRequest = (store, itemId) => (store.paymentRequests || []).some(
-  (request) => request.itemId === itemId && request.status === "Pending",
+  (request) => paymentRequestIncludesItem(request, itemId) && request.status === "Pending",
 );
 
 const requestStatusClass = (status) => {
@@ -241,7 +242,7 @@ function inventoryForm(store) {
   const canSubmit = (!locked || soldReadOnly) && collections.length > 0;
   const itemStatus = editingItem?.status || STATUSES.AVAILABLE;
   const pendingRequest = editingItem
-    ? (store.paymentRequests || []).find((request) => request.itemId === editingItem.id && request.status === "Pending")
+    ? (store.paymentRequests || []).find((request) => paymentRequestIncludesItem(request, editingItem.id) && request.status === "Pending")
     : null;
 
   return `

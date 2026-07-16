@@ -1,8 +1,9 @@
 import { supabase } from "./supabaseClient.js";
 import { emptyStore, loadStore, normalizeStore } from "./storage.js";
 import { hasKnownCost, normalizeCostInput } from "../core/costs.js";
-import { COURIER_OPTIONS, DEFAULT_PAYMENT_CONFIG, normalizeShippingMode, SHIPPING_MODES, validatePaymentRequestRequiredFields } from "../core/paymentRequests.js";
+import { COURIER_OPTIONS, DEFAULT_PAYMENT_CONFIG, normalizePaymentRequestItemsInput, normalizeShippingMode, SHIPPING_MODES, validatePaymentRequestRequiredFields } from "../core/paymentRequests.js";
 import { loadSupabaseOrders } from "./orderService.js";
+import { deriveLegacySales, normalizePaymentRequestItemRows, normalizePaymentRequests, normalizeSaleHeaders, normalizeSaleItemRows } from "../core/transactions.js";
 
 const STATUSES = {
   AVAILABLE: "Available",
@@ -81,17 +82,26 @@ function currentStore() {
 }
 
 async function assertNoPendingPaymentRequest(userId, itemId) {
-  const { data, error } = await supabase
-    .from("payment_requests")
-    .select("id")
-    .eq("inventory_item_id", itemId)
-    .eq("user_id", userId)
-    .eq("status", "Pending")
-    .limit(1);
+  const [reservationResult, legacyResult] = await Promise.all([
+    supabase
+      .from("inventory_reservations")
+      .select("id")
+      .eq("inventory_item_id", itemId)
+      .eq("user_id", userId)
+      .limit(1),
+    supabase
+      .from("payment_requests")
+      .select("id")
+      .eq("inventory_item_id", itemId)
+      .eq("user_id", userId)
+      .eq("status", "Pending")
+      .limit(1),
+  ]);
 
-  if (error) throw error;
+  if (reservationResult.error) throw reservationResult.error;
+  if (legacyResult.error) throw legacyResult.error;
   assert(
-    !data?.length,
+    !reservationResult.data?.length && !legacyResult.data?.length,
     "This item has a pending payment request. Mark it Paid or Cancel the request before changing its inventory status.",
   );
 }
@@ -160,6 +170,9 @@ export async function loadSupabaseStore() {
     logsResult,
     settingsResult,
     paymentRequestsResult,
+    paymentRequestItemsResult,
+    reservationsResult,
+    saleItemsResult,
     orderDomain,
   ] = await Promise.all([
     supabase.from("collections").select("*").eq("user_id", userId),
@@ -171,6 +184,9 @@ export async function loadSupabaseStore() {
     supabase.from("activity_logs").select("*").eq("user_id", userId),
     supabase.from("settings").select("*").eq("user_id", userId),
     supabase.from("payment_requests").select("*").eq("user_id", userId).order("issued_at", { ascending: false }),
+    supabase.from("payment_request_items").select("*").eq("user_id", userId).order("inventory_item_id"),
+    supabase.from("inventory_reservations").select("*").eq("user_id", userId).order("inventory_item_id"),
+    supabase.from("sale_items").select("*").eq("user_id", userId).order("inventory_item_id"),
     loadSupabaseOrders(userId),
   ]);
 
@@ -184,6 +200,9 @@ export async function loadSupabaseStore() {
     logsResult,
     settingsResult,
     paymentRequestsResult,
+    paymentRequestItemsResult,
+    reservationsResult,
+    saleItemsResult,
   ];
 
   const failed = results.find((result) => result.error);
@@ -202,6 +221,20 @@ export async function loadSupabaseStore() {
   }));
   const collectionNameById = new Map(collections.map((collection) => [collection.id, collection.name]));
   const toAppCollectionId = (collectionId) => collectionNameById.get(collectionId) || collectionId || "";
+  const paymentRequestItems = normalizePaymentRequestItemRows(paymentRequestItemsResult.data || []);
+  const inventoryReservations = (reservationsResult.data || []).map((reservation) => ({
+    id: reservation.id,
+    paymentRequestId: reservation.payment_request_id,
+    inventoryItemId: reservation.inventory_item_id,
+    createdAt: reservation.created_at,
+  }));
+  const saleItems = normalizeSaleItemRows(saleItemsResult.data || [], toAppCollectionId);
+  const saleHeaders = normalizeSaleHeaders(salesResult.data || [], saleItemsResult.data || [], toAppCollectionId);
+  const paymentRequests = normalizePaymentRequests(
+    paymentRequestsResult.data || [],
+    paymentRequestItemsResult.data || [],
+    reservationsResult.data || [],
+  ).map((request) => ({ ...request, shippingMode: normalizeShippingMode(request.shippingMode) }));
 
   return {
     ...emptyStore(),
@@ -227,21 +260,10 @@ export async function loadSupabaseStore() {
       notes: item.notes || "",
     })),
 
-    sales: (salesResult.data || []).map((sale) => ({
-      id: sale.id,
-      itemId: sale.inventory_item_id,
-      collectionId: toAppCollectionId(sale.collection_id),
-      sku: sale.sku_snapshot,
-      itemName: sale.item_name_snapshot,
-      cost: costMoney(sale.cost_snapshot),
-      price: Number(sale.sale_price || 0),
-      profit: hasKnownCost(sale.profit_snapshot) ? Number(sale.profit_snapshot) : null,
-      platform: sale.platform,
-      paymentStatus: sale.payment_status,
-      date: sale.sale_date,
-      notes: sale.notes || "",
-      voidedAt: sale.voided_at,
-    })),
+    saleHeaders,
+    saleItems,
+    // Temporary item-level view for the unchanged Sales page and item reports.
+    sales: deriveLegacySales(saleHeaders),
 
     expenses: (expensesResult.data || []).map((expense) => ({
       id: expense.id,
@@ -287,29 +309,9 @@ export async function loadSupabaseStore() {
       date: log.activity_date,
     })),
 
-    paymentRequests: (paymentRequestsResult.data || []).map((request) => ({
-      id: request.id,
-      requestNumber: request.request_number,
-      itemId: request.inventory_item_id,
-      customerName: request.customer_name,
-      customerContact: request.customer_contact,
-      shippingAddress: request.shipping_address || "",
-      itemName: request.item_name_snapshot,
-      itemPrice: Number(request.item_price || 0),
-      shippingFee: Number(request.shipping_fee || 0),
-      shippingMode: normalizeShippingMode(request.shipping_mode),
-      courier: request.courier || "",
-      discount: Number(request.discount || 0),
-      totalAmount: Number(request.total_amount || 0),
-      status: request.status,
-      issuedAt: request.issued_at,
-      validUntil: request.valid_until,
-      customerNote: request.customer_note || "",
-      paymentConfig: request.payment_config_snapshot || {},
-      paymentMethod: request.payment_method || "",
-      createdAt: request.created_at,
-      updatedAt: request.updated_at,
-    })),
+    paymentRequests,
+    paymentRequestItems,
+    inventoryReservations,
 
     paymentConfig: {
       ...DEFAULT_PAYMENT_CONFIG,
@@ -356,24 +358,26 @@ export async function createSupabasePaymentRequest(input) {
   const courier = input.courier === "Other"
     ? String(input.customCourier || "").trim()
     : String(input.courier || "").trim();
+  const items = normalizePaymentRequestItemsInput(input);
   const amounts = {
-    itemPrice: money(input.itemPrice),
+    merchandiseSubtotal: money(items.reduce((sum, item) => sum + item.lineTotal, 0)),
     shippingFee: shippingMode === SHIPPING_MODES.FEE_NOW ? money(input.shippingFee) : 0,
     discount: money(input.discount),
   };
 
-  assert(amounts.itemPrice >= 0, "Selling price must be zero or higher.");
   assert(amounts.shippingFee >= 0, "Shipping fee must be zero or higher.");
   assert(amounts.discount >= 0, "Discount must be zero or higher.");
   assert(!courier || COURIER_OPTIONS.includes(input.courier) || input.courier === "Other", "Choose a valid courier.");
-  assert(amounts.itemPrice + amounts.shippingFee - amounts.discount >= 0, "Total amount due cannot be negative.");
+  assert(amounts.discount <= amounts.merchandiseSubtotal, "Discount must not exceed the merchandise subtotal.");
 
-  const { data, error } = await supabase.rpc("create_payment_request", {
-    p_inventory_item_id: input.itemId,
+  const { data, error } = await supabase.rpc("create_payment_request_v2", {
+    p_items: items.map((item) => ({
+      inventory_item_id: item.inventoryItemId,
+      unit_price: item.unitPrice,
+    })),
     p_customer_name: requiredFields.values.customerName,
     p_customer_contact: requiredFields.values.customerContact,
     p_shipping_address: String(input.shippingAddress || "").trim(),
-    p_item_price: amounts.itemPrice,
     p_shipping_fee: amounts.shippingFee,
     p_shipping_mode: shippingMode,
     p_courier: courier,
@@ -387,11 +391,11 @@ export async function createSupabasePaymentRequest(input) {
     },
   });
   if (error) throw error;
-  return data;
+  return data?.payment_request || data;
 }
 
 export async function markSupabasePaymentRequestPaid(requestId, paymentMethod) {
-  const { data, error } = await supabase.rpc("mark_payment_request_paid", {
+  const { data, error } = await supabase.rpc("mark_multi_item_payment_request_paid_v1", {
     p_request_id: requestId,
     p_payment_method: paymentMethod,
   });
@@ -400,7 +404,7 @@ export async function markSupabasePaymentRequestPaid(requestId, paymentMethod) {
 }
 
 export async function cancelSupabasePaymentRequest(requestId) {
-  const { data, error } = await supabase.rpc("cancel_payment_request", {
+  const { data, error } = await supabase.rpc("cancel_multi_item_payment_request_v1", {
     p_request_id: requestId,
   });
   if (error) throw error;
@@ -595,6 +599,7 @@ export async function updateSupabaseInventoryItem(itemId, input) {
     : item.status;
   const linkedSales = isSold ? (store.sales || []).filter((sale) => sale.itemId === itemId) : [];
   if (isSold) assert(linkedSales.length === 1, "Sold item has no single linked sale record to update.");
+  if (isSold) assert(!linkedSales[0].sourcePaymentRequestId, "Paid Payment Request Sales cannot be edited.");
 
   const { data, error } = await supabase
     .from("inventory_items")
@@ -917,6 +922,7 @@ export async function updateSupabaseSale(saleId, input) {
   const store = currentStore();
   const sale = store.sales.find((entry) => entry.id === saleId);
   assert(sale, "Sale not found.");
+  assert(!sale.sourcePaymentRequestId, "Paid Payment Request Sales cannot be edited.");
 
   const item = store.inventory.find((entry) => entry.id === sale.itemId);
   assert(item, "Inventory item not found.");
@@ -1154,6 +1160,11 @@ export async function replaceSupabaseStoreFromBackup(rawStore) {
   const store = normalizeStore(rawStore);
   const collectionIds = new Map();
   const inventoryIds = new Map();
+
+  assert(
+    !(store.paymentRequestItems.length || store.inventoryReservations.length || store.saleItems.length || store.saleHeaders.some((sale) => sale.items?.length > 1)),
+    "Multi-item transaction backup restore is not supported. Keep this backup as a read-only export.",
+  );
 
   const { count: orderCount, error: orderCountError } = await supabase
     .from("orders")

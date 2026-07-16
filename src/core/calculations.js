@@ -10,6 +10,11 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const isValidDate = (value) => Boolean(value) && !Number.isNaN(new Date(value).getTime());
 const sameDateTime = (first, second) =>
   isValidDate(first) && isValidDate(second) && new Date(first).getTime() === new Date(second).getTime();
+const financialSales = (store) => Array.isArray(store.saleHeaders) && store.saleHeaders.length
+  ? store.saleHeaders
+  : store.sales || [];
+const merchandiseRevenue = (sale) => money(sale.merchandiseRevenue ?? sale.price);
+const aggregateCost = (sale) => sale.aggregateCogs ?? sale.cost;
 
 export function getInventoryStatusCounts(inventory = []) {
   return inventory.reduce(
@@ -41,11 +46,11 @@ export function getActiveInventoryItems(inventory = []) {
 }
 
 export function getRevenue(store, filters = {}) {
-  return inRange(store.sales, filters).reduce((total, sale) => total + money(sale.price), 0);
+  return inRange(financialSales(store), filters).reduce((total, sale) => total + merchandiseRevenue(sale), 0);
 }
 
 export function getCostOfSoldItems(store, filters = {}) {
-  return inRange(store.sales, filters).reduce((total, sale) => total + knownCostOrZero(sale.cost), 0);
+  return inRange(financialSales(store), filters).reduce((total, sale) => total + knownCostOrZero(aggregateCost(sale)), 0);
 }
 
 export function getExpenses(store, filters = {}) {
@@ -149,9 +154,9 @@ export function getCash(store) {
   const withdrawals = store.capital
     .filter((entry) => entry.type === CAPITAL_TYPES.WITHDRAWAL)
     .reduce((total, entry) => total + money(entry.amount), 0);
-  const paidRevenue = store.sales
+  const paidRevenue = financialSales(store)
     .filter((sale) => sale.paymentStatus === PAYMENT_STATUSES.PAID)
-    .reduce((total, sale) => total + money(sale.price), 0);
+    .reduce((total, sale) => total + money(sale.totalPaid ?? sale.price), 0);
   const inventoryPurchases = store.purchases.reduce((total, purchase) => total + knownCostOrZero(purchase.cost), 0);
   const cashExpenses = store.expenses
     .filter((expense) => expense.category !== "Write-Off")

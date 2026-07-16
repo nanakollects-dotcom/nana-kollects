@@ -143,14 +143,14 @@ test("Payment Request review renders every selected item once and preserves head
   assert.equal(inventoryPage.openInventoryPaymentRequest(store), true);
   const html = inventoryPage.renderInventoryPage(store);
   assert.equal((html.match(/data-request-item-row=/g) || []).length, 2);
-  assert.equal((html.match(/PR-CONTROLLED/g) || []).length, 1, "one request header must render once");
+  assert.equal((html.match(/<strong>PR-CONTROLLED<\/strong>/g) || []).length, 1, "one request header must render once");
   assert.match(html, /Product 1 \+1 more/);
   assert.match(html, /2 items/);
   assert.match(html, /data-line-price="item-1"/);
   assert.match(html, /min="0.01"/);
   assert.match(html, /data-remove-selected-item="item-2"/);
   assert.match(html, /Merchandise Subtotal/);
-  assert.equal((html.match(/payment-request-snapshot-item/g) || []).length, 3, "two detail rows plus their container render");
+  assert.equal((html.match(/class="payment-request-snapshot-item"/g) || []).length, 2, "every snapshot item renders once");
   assert.match(html, /View details/);
   assert.match(html, /<th>Date<\/th>/);
   assert.match(html, /Subtotal/);

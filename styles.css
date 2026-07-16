@@ -4056,26 +4056,77 @@ td:nth-child(n + 3) {
   outline-offset: 3px;
 }
 
-.payment-request-snapshot-items,
 .payment-request-snapshot-totals {
   display: grid;
   gap: 6px;
   margin: 10px 0 0;
 }
 
-.payment-request-snapshot-item {
+.payment-request-snapshot-meta {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: 12px;
-  align-items: baseline;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--line);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 18px;
+  margin: 12px 0;
+}
+
+.payment-request-snapshot-meta > div {
+  min-width: 0;
+}
+
+.payment-request-snapshot-meta .full-span {
+  grid-column: 1 / -1;
+}
+
+.payment-request-snapshot-meta dt,
+.payment-request-snapshot-meta dd {
+  margin: 0;
   font-size: 12px;
 }
 
-.payment-request-snapshot-item > span {
-  min-width: 0;
+.payment-request-snapshot-meta dt {
+  margin-bottom: 2px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.payment-request-snapshot-meta dd {
   overflow-wrap: anywhere;
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.payment-request-snapshot-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.payment-request-snapshot-table {
+  width: 100%;
+  min-width: 590px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.payment-request-snapshot-table th,
+.payment-request-snapshot-table td {
+  padding: 8px;
+  vertical-align: top;
+}
+
+.payment-request-snapshot-table td {
+  overflow-wrap: anywhere;
+}
+
+.payment-request-snapshot-item {
+  border-bottom: 1px solid var(--line);
+}
+
+.payment-request-detail-unavailable {
+  margin: 12px 0 0;
+  color: var(--danger);
+  font-size: 12px;
 }
 
 .payment-request-snapshot-totals > div {
@@ -4982,16 +5033,58 @@ td:nth-child(n + 3) {
 }
 
 @media (max-width: 639px) {
+  .payment-request-snapshot-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .payment-request-snapshot-meta .full-span {
+    grid-column: auto;
+  }
+
+  .payment-request-snapshot-table {
+    min-width: 0;
+  }
+
+  .payment-request-snapshot-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .payment-request-snapshot-table,
+  .payment-request-snapshot-table tbody,
+  .payment-request-snapshot-table tr,
+  .payment-request-snapshot-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .payment-request-snapshot-table tr {
+    padding: 8px;
+  }
+
+  .payment-request-snapshot-table td {
+    display: grid;
+    grid-template-columns: 86px minmax(0, 1fr);
+    gap: 8px;
+    padding: 4px;
+    text-align: left;
+  }
+
+  .payment-request-snapshot-table td::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-weight: 700;
+  }
+
   .payment-request-snapshot-details {
     min-width: min(290px, 74vw);
-  }
-
-  .payment-request-snapshot-item {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .payment-request-snapshot-item > strong:last-child {
-    grid-column: 2;
   }
 
   .orders-view-tabs {

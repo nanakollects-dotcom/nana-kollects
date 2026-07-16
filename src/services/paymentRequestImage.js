@@ -1,4 +1,5 @@
 import { formatMoney } from "../components/format.js";
+import { createPaymentRequestDocumentModel } from "../core/paymentRequestDocuments.js";
 import { displayCourier, SHIPPING_MODES } from "../core/paymentRequests.js";
 
 const IMAGE_WIDTH = 1080;
@@ -7,6 +8,7 @@ const MARGIN = 72;
 const CONTENT_WIDTH = IMAGE_WIDTH - MARGIN * 2;
 const AMOUNT_RIGHT_X = IMAGE_WIDTH - MARGIN - 18;
 const SUMMARY_LABEL_RIGHT_X = AMOUNT_RIGHT_X - 170;
+export const MAX_PAYMENT_REQUEST_IMAGE_ITEMS = 10;
 const COLORS = {
   ink: "#1f2329",
   muted: "#626975",
@@ -53,6 +55,24 @@ function wrapText(value, maxChars) {
   });
   if (line) lines.push(line);
   return lines;
+}
+
+export function getPaymentRequestImagePlan(request = {}) {
+  const model = createPaymentRequestDocumentModel(request);
+  if (model.itemCount > MAX_PAYMENT_REQUEST_IMAGE_ITEMS) {
+    throw new Error("This Payment Request has too many items for one image. Download the PDF instead.");
+  }
+  const rows = model.items.map((item) => {
+    const nameLines = wrapText(item.itemName, 30);
+    const skuLines = wrapText(item.sku || "SKU unavailable", 22);
+    return {
+      ...item,
+      nameLines,
+      skuLines,
+      height: Math.max(104, 34 + skuLines.length * 24 + nameLines.length * 31),
+    };
+  });
+  return Object.freeze({ model, rows: Object.freeze(rows) });
 }
 
 function text(value, x, y, size = 24, weight = 400, color = COLORS.ink, extra = "") {
@@ -163,6 +183,13 @@ async function svgToPngBlob(svg, overlays = []) {
 }
 
 export async function createPaymentRequestImage(request, config = {}) {
+  const plan = getPaymentRequestImagePlan(request);
+  const { model } = plan;
+  const paymentDetails = {
+    gcashAccountName: model.paymentConfig.gcashAccountName || config.gcashAccountName,
+    gcashMobileNumber: model.paymentConfig.gcashMobileNumber || config.gcashMobileNumber,
+    gotymeAccountName: model.paymentConfig.gotymeAccountName || config.gotymeAccountName,
+  };
   const gcashQrSource = paymentQrSource(config.gcashQrImage, "/payment/gcash-qr.png");
   const gotymeQrSource = paymentQrSource(GOTYME_QR_ASSET, GOTYME_QR_ASSET);
   const [gcashQr, gotymeQr] = await Promise.all([
@@ -177,7 +204,7 @@ export async function createPaymentRequestImage(request, config = {}) {
   y += 36;
   svg += text("Hot Picks. Limited Pieces.", MARGIN, y, 22, 400, COLORS.muted);
   y += 38;
-  svg += text(`Payment Request No. ${request.requestNumber}`, MARGIN, y, 27, 800, COLORS.accent);
+  svg += text(`Payment Request No. ${model.requestNumber}`, MARGIN, y, 27, 800, COLORS.accent);
   y += 38;
   svg += rule(y);
 
@@ -188,27 +215,27 @@ export async function createPaymentRequestImage(request, config = {}) {
   svg += sectionTitle("Request Details", rightX, y);
   let leftY = y + 50;
   let rightY = y + 50;
-  let rendered = detail("Customer Name", request.customerName, leftX, leftY, 410);
+  let rendered = detail("Customer Name", model.customerName, leftX, leftY, 410);
   svg += rendered.svg;
   leftY = rendered.y;
-  rendered = detail("Mobile Number", request.customerContact, leftX, leftY, 410);
+  rendered = detail("Mobile Number", model.customerContact, leftX, leftY, 410);
   svg += rendered.svg;
   leftY = rendered.y;
-  rendered = detail("Shipping Address", request.shippingAddress, leftX, leftY, 410);
+  rendered = detail("Shipping Address", model.shippingAddress, leftX, leftY, 410);
   svg += rendered.svg;
   leftY = rendered.y;
-  const courierLabel = request.shippingMode === SHIPPING_MODES.PICKUP ? "" : displayCourier(request.courier);
+  const courierLabel = model.shippingMode === SHIPPING_MODES.PICKUP ? "" : displayCourier(model.courier);
   rendered = detail("Courier", courierLabel, leftX, leftY, 410);
   svg += rendered.svg;
   leftY = rendered.y;
 
-  rendered = detail("Date Issued", dateLabel(request.issuedAt), rightX, rightY, 400);
+  rendered = detail("Date Issued", dateLabel(model.issuedAt), rightX, rightY, 400);
   svg += rendered.svg;
   rightY = rendered.y;
-  rendered = detail("Payment Status", request.status, rightX, rightY, 400);
+  rendered = detail("Payment Status", model.status, rightX, rightY, 400);
   svg += rendered.svg;
   rightY = rendered.y;
-  rendered = detail("Valid Until", dateLabel(request.validUntil), rightX, rightY, 400);
+  rendered = detail("Valid Until", dateLabel(model.validUntil), rightX, rightY, 400);
   svg += rendered.svg;
   rightY = rendered.y;
   y = Math.max(leftY, rightY) + 24;
@@ -220,33 +247,46 @@ export async function createPaymentRequestImage(request, config = {}) {
   const orderHeaderY = y;
   const orderHeaderDividerY = orderHeaderY + 58;
   svg += `<line x1="${MARGIN}" y1="${orderHeaderDividerY}" x2="${IMAGE_WIDTH - MARGIN}" y2="${orderHeaderDividerY}" stroke="${COLORS.line}" stroke-width="1.5" />`;
-  svg += text("Item", MARGIN + 18, orderHeaderY + 37, 22, 700, COLORS.muted);
-  svg += centerText("Qty", 650, orderHeaderY + 37, 22, 700, COLORS.muted);
-  svg += rightText("Amount", AMOUNT_RIGHT_X, orderHeaderY + 37, 22, 700, COLORS.muted);
-  const itemLines = wrapText(request.itemName, 34);
-  const itemLineHeight = 34;
-  const itemRowTop = orderHeaderDividerY + 30;
-  const itemRowHeight = Math.max(76, itemLines.length * itemLineHeight + 10);
-  const itemRowCenterY = itemRowTop + itemRowHeight / 2 + 8;
-  const itemTextStartY = itemRowCenterY - ((itemLines.length - 1) * itemLineHeight) / 2;
-  itemLines.forEach((line, index) => {
-    svg += text(line, MARGIN + 18, itemTextStartY + index * itemLineHeight, 28, 700, COLORS.ink);
+  const itemX = MARGIN + 18;
+  const quantityX = 590;
+  const unitRightX = 800;
+  svg += text("Item / SKU", itemX, orderHeaderY + 37, 22, 700, COLORS.muted);
+  svg += centerText("Qty", quantityX, orderHeaderY + 37, 22, 700, COLORS.muted);
+  svg += rightText("Unit Price", unitRightX, orderHeaderY + 37, 22, 700, COLORS.muted);
+  svg += rightText("Line Total", AMOUNT_RIGHT_X, orderHeaderY + 37, 22, 700, COLORS.muted);
+  y = orderHeaderDividerY;
+  plan.rows.forEach((item) => {
+    const rowTop = y + 20;
+    const rowCenterY = rowTop + item.height / 2;
+    let itemY = rowTop + 27;
+    item.skuLines.forEach((line) => {
+      svg += text(line, itemX, itemY, 20, 700, COLORS.accent);
+      itemY += 24;
+    });
+    item.nameLines.forEach((line) => {
+      svg += text(line, itemX, itemY, 26, 700, COLORS.ink);
+      itemY += 31;
+    });
+    svg += centerText(String(item.quantity), quantityX, rowCenterY + 8, 25, 400, COLORS.ink);
+    svg += rightText(money(item.unitPrice), unitRightX, rowCenterY + 8, 24, 600, COLORS.ink);
+    svg += rightText(money(item.lineTotal), AMOUNT_RIGHT_X, rowCenterY + 8, 25, 700, COLORS.ink);
+    y = rowTop + item.height;
+    svg += rule(y);
   });
-  svg += centerText("1", 650, itemRowCenterY, 28, 400, COLORS.ink);
-  svg += rightText(money(request.itemPrice), AMOUNT_RIGHT_X, itemRowCenterY, 28, 700, COLORS.ink);
-  y = itemRowTop + itemRowHeight + 22;
-  svg += rule(y);
 
   y += 36;
-  const summaryRows = [["Subtotal", money(request.itemPrice)]];
-  if (request.discount > 0) {
-    summaryRows.push(["Discount", `-${money(request.discount)}`]);
+  const summaryRows = [["Merchandise Subtotal", money(model.merchandiseSubtotal)]];
+  if (model.discount > 0) {
+    summaryRows.push(["Discount", `-${money(model.discount)}`]);
   }
-  if (request.shippingMode === SHIPPING_MODES.TO_FOLLOW) {
-    summaryRows.push(["Shipping Fee", "To follow"]);
+  if (model.shippingMode === SHIPPING_MODES.TO_FOLLOW) {
+    summaryRows.push(["Shipping", "To follow"]);
   }
-  if (request.shippingMode === SHIPPING_MODES.FEE_NOW && request.shippingFee > 0) {
-    summaryRows.push(["Shipping Fee", money(request.shippingFee)]);
+  if (model.shippingMode === SHIPPING_MODES.PICKUP) {
+    summaryRows.push(["Shipping", "Pickup"]);
+  }
+  if (model.shippingMode === SHIPPING_MODES.FEE_NOW) {
+    summaryRows.push(["Shipping", money(model.shippingFee)]);
   }
   summaryRows.forEach(([label, value]) => {
     svg += totalRow(label, value, y);
@@ -256,8 +296,8 @@ export async function createPaymentRequestImage(request, config = {}) {
   const totalRowHeight = 54;
   const totalBottomY = totalTopY + totalRowHeight;
   svg += `<line x1="${MARGIN}" y1="${totalTopY}" x2="${IMAGE_WIDTH - MARGIN}" y2="${totalTopY}" stroke="${COLORS.line}" stroke-width="1.5" />`;
-  svg += text(request.shippingMode === SHIPPING_MODES.TO_FOLLOW ? "Amount Due Now" : "Total Amount Due", MARGIN, totalTopY + totalRowHeight / 2 + 10, 31, 800, COLORS.ink);
-  svg += rightText(money(request.totalAmount), AMOUNT_RIGHT_X, totalTopY + totalRowHeight / 2 + 12, 40, 800, COLORS.ink);
+  svg += text(model.shippingMode === SHIPPING_MODES.TO_FOLLOW ? "Amount Due Now" : "Grand Total", MARGIN, totalTopY + totalRowHeight / 2 + 10, 31, 800, COLORS.ink);
+  svg += rightText(money(model.grandTotal), AMOUNT_RIGHT_X, totalTopY + totalRowHeight / 2 + 12, 40, 800, COLORS.ink);
   y = totalBottomY;
   svg += rule(y);
 
@@ -275,13 +315,13 @@ export async function createPaymentRequestImage(request, config = {}) {
   svg += `<rect x="${gotymeCardX}" y="${cardY}" width="${cardWidth}" height="${cardHeight}" fill="#ffffff" stroke="${COLORS.line}" stroke-width="1.5" />`;
   const gcashTextX = MARGIN + 26 + qrSize + 22;
   const paymentTextWidth = cardWidth - qrSize - 74;
-  rendered = paymentDetail("Account Name", config.gcashAccountName, gcashTextX, cardY + 82, paymentTextWidth);
+  rendered = paymentDetail("Account Name", paymentDetails.gcashAccountName, gcashTextX, cardY + 82, paymentTextWidth);
   svg += rendered.svg;
-  rendered = paymentDetail("GCash No.", config.gcashMobileNumber, gcashTextX, rendered.y, paymentTextWidth);
+  rendered = paymentDetail("GCash No.", paymentDetails.gcashMobileNumber, gcashTextX, rendered.y, paymentTextWidth);
   svg += rendered.svg;
 
   const gotymeTextX = gotymeCardX + 26 + qrSize + 22;
-  rendered = paymentDetail("Account Name", config.gotymeAccountName, gotymeTextX, cardY + 78, paymentTextWidth);
+  rendered = paymentDetail("Account Name", paymentDetails.gotymeAccountName, gotymeTextX, cardY + 78, paymentTextWidth);
   svg += rendered.svg;
   rendered = paymentDetail("Acc No.", "014451611994", gotymeTextX, rendered.y, paymentTextWidth);
   svg += rendered.svg;

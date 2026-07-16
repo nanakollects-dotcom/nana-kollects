@@ -203,9 +203,9 @@ test("rate-limit variants are consistently safe", () => {
 
 test("Payment Request image failures use the fixed safe recovery message", async () => {
   const source = await readFile(new URL("../src/pages/inventory.js", import.meta.url), "utf8");
-  const fixedMessage = "Payment Request created, but the image could not be prepared. Try again.";
+  const fixedMessage = "We couldn't prepare this document. Please try again.";
   assert.match(source, /await createPaymentRequestImage\(/);
-  assert.match(source, /catch \{\s*notify\("Payment Request created, but the image could not be prepared\. Try again\."/s);
+  assert.match(source, /catch \(error\) \{\s*notify\(getSafeUserError\(error, "document"\), true\)/s);
   assert.doesNotMatch(source, /imageError\.message|notify\([^\n]*error\.message/);
 
   const notifications = [];

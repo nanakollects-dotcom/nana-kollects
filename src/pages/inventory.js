@@ -21,6 +21,7 @@ import { createPaymentRequestPdf, downloadPaymentRequestPdf } from "../services/
 import { createPaymentRequestImage, sharePaymentRequestImage } from "../services/paymentRequestImage.js";
 import { getSafeUserError } from "../services/errorService.js";
 import { paymentRequestIncludesItem } from "../core/transactions.js";
+import { createPaymentRequestDocumentModel } from "../core/paymentRequestDocuments.js";
 
 let editingId = null;
 let isModalOpen = false;
@@ -422,8 +423,8 @@ function inventoryForm(store) {
                     <div><span>Request No</span><strong>${escapeText(pendingRequest.requestNumber)}</strong></div>
                   </div>
                   <div class="request-actions">
-                    <button class="table-action primary-action" type="button" data-download-image-request="${pendingRequest.id}">Share / Save Image</button>
-                    <button class="table-action" type="button" data-download-request="${pendingRequest.id}">Download PDF</button>
+                    <button class="table-action primary-action" type="button" data-download-image-request="${pendingRequest.id}" aria-label="Share or save image for ${escapeText(pendingRequest.requestNumber)}">Share / Save Image</button>
+                    <button class="table-action" type="button" data-download-request="${pendingRequest.id}" aria-label="Download PDF for ${escapeText(pendingRequest.requestNumber)}">Download PDF</button>
                     <button class="table-action primary-action" type="button" data-paid-request="${pendingRequest.id}">Mark Paid</button>
                     <button class="table-action danger" type="button" data-cancel-request="${pendingRequest.id}">Cancel Payment Request</button>
                   </div>
@@ -667,19 +668,45 @@ function paidRequestForm(store) {
 function renderPaymentRequests(store) {
   const requests = store.paymentRequests || [];
   const rows = requests.map((request) => {
-    const items = request.items?.length
-      ? request.items
-      : [{ itemName: request.itemName, sku: request.sku, quantity: 1 }];
+    let documentModel = null;
+    try {
+      documentModel = createPaymentRequestDocumentModel(request);
+    } catch {
+      // Keep the request header visible with an explicit unavailable detail state.
+    }
+    const items = documentModel?.items || [];
     const firstItem = items[0] || {};
     const moreCount = Math.max(0, items.length - 1);
-    const summary = `${firstItem.itemName || "Item"}${moreCount ? ` +${moreCount} more` : ""}`;
-    const itemDetails = items.map((item) => `
-      <div class="payment-request-snapshot-item">
-        <span><span class="mono">${escapeText(item.sku || "—")}</span> ${escapeText(item.itemName || "Item")}</span>
-        <strong>${Number(item.quantity || 1)} × ${formatMoney(item.unitPrice ?? item.lineTotal ?? 0)}</strong>
-        <strong>${formatMoney(item.lineTotal ?? item.unitPrice ?? 0)}</strong>
+    const summary = `${firstItem.itemName || "Item details unavailable"}${moreCount ? ` +${moreCount} more` : ""}`;
+    const itemDetails = documentModel ? `
+      <div class="payment-request-snapshot-table-wrap">
+        <table class="payment-request-snapshot-table">
+          <thead><tr><th>SKU</th><th>Item</th><th>Qty</th><th class="money-cell">Unit Price</th><th class="money-cell">Line Total</th></tr></thead>
+          <tbody>${items.map((item) => `
+            <tr class="payment-request-snapshot-item">
+              <td class="mono" data-label="SKU">${escapeText(item.sku || "Unavailable")}</td>
+              <td data-label="Item"><strong>${escapeText(item.itemName)}</strong></td>
+              <td data-label="Quantity">${item.quantity}</td>
+              <td class="money-cell" data-label="Unit Price">${formatMoney(item.unitPrice)}</td>
+              <td class="money-cell" data-label="Line Total"><strong>${formatMoney(item.lineTotal)}</strong></td>
+            </tr>
+          `).join("")}</tbody>
+        </table>
       </div>
-    `).join("");
+    ` : `<p class="payment-request-detail-unavailable" role="status">Payment Request details are unavailable. Refresh and try again.</p>`;
+    const snapshotMeta = documentModel ? `
+      <dl class="payment-request-snapshot-meta">
+        <div><dt>Customer</dt><dd>${escapeText(documentModel.customerName)}</dd></div>
+        <div><dt>Contact</dt><dd>${escapeText(documentModel.customerContact || "Unavailable")}</dd></div>
+        <div><dt>Issue Date</dt><dd>${formatDate(documentModel.issuedAt)}</dd></div>
+        <div><dt>Status</dt><dd>${escapeText(documentModel.status)}</dd></div>
+        <div><dt>Payment</dt><dd>${escapeText(documentModel.paymentMethod || "GCash / GoTyme")}</dd></div>
+        <div><dt>Payment Accounts</dt><dd>${escapeText([documentModel.paymentConfig.gcashAccountName, documentModel.paymentConfig.gotymeAccountName].filter(Boolean).join(" / ") || "Unavailable")}</dd></div>
+        <div><dt>Shipping Method</dt><dd>${escapeText(documentModel.shippingMethod)}</dd></div>
+        <div><dt>Courier</dt><dd>${escapeText(displayCourier(documentModel.courier) || (documentModel.shippingMode === SHIPPING_MODES.PICKUP ? "Pickup" : "Unavailable"))}</dd></div>
+        <div class="full-span"><dt>Shipping Address</dt><dd>${escapeText(documentModel.shippingAddress || "Unavailable")}</dd></div>
+      </dl>
+    ` : "";
     return `
     <tr>
       <td>
@@ -687,13 +714,14 @@ function renderPaymentRequests(store) {
         <small>${escapeText(summary)} &middot; ${items.length} item${items.length === 1 ? "" : "s"}</small>
         <details class="payment-request-snapshot-details">
           <summary>View details</summary>
-          <div class="payment-request-snapshot-items">${itemDetails}</div>
-          <dl class="payment-request-snapshot-totals">
-            <div><dt>Subtotal</dt><dd>${formatMoney(request.merchandiseSubtotal ?? request.itemPrice)}</dd></div>
-            <div><dt>Discount</dt><dd>${formatMoney(request.discount)}</dd></div>
-            <div><dt>Shipping</dt><dd>${request.shippingMode === SHIPPING_MODES.TO_FOLLOW ? "To follow" : request.shippingMode === SHIPPING_MODES.PICKUP ? "Pickup" : formatMoney(request.shippingFee)}</dd></div>
-            <div><dt>Total</dt><dd>${formatMoney(request.totalAmount)}</dd></div>
-          </dl>
+          ${snapshotMeta}
+          ${itemDetails}
+          ${documentModel ? `<dl class="payment-request-snapshot-totals">
+            <div><dt>Merchandise Subtotal</dt><dd>${formatMoney(documentModel.merchandiseSubtotal)}</dd></div>
+            <div><dt>Discount</dt><dd>${documentModel.discount ? `-${formatMoney(documentModel.discount)}` : formatMoney(0)}</dd></div>
+            <div><dt>Shipping</dt><dd>${documentModel.shippingMode === SHIPPING_MODES.TO_FOLLOW ? "To follow" : documentModel.shippingMode === SHIPPING_MODES.PICKUP ? "Pickup" : formatMoney(documentModel.shippingFee)}</dd></div>
+            <div><dt>Grand Total</dt><dd>${formatMoney(documentModel.grandTotal)}</dd></div>
+          </dl>` : ""}
         </details>
       </td>
       <td>${escapeText(request.customerName)}</td>
@@ -701,8 +729,8 @@ function renderPaymentRequests(store) {
       <td><span class="pill ${requestStatusClass(request.status)}">${request.status}</span></td>
       <td>${formatDate(request.issuedAt || request.createdAt)}</td>
       <td class="actions-cell request-actions">
-        <button class="table-action primary-action" type="button" data-download-image-request="${request.id}">Share / Save Image</button>
-        <button class="table-action" type="button" data-download-request="${request.id}">Download PDF</button>
+        <button class="table-action primary-action" type="button" data-download-image-request="${request.id}" aria-label="Share or save image for ${escapeText(request.requestNumber)}">Share / Save Image</button>
+        <button class="table-action" type="button" data-download-request="${request.id}" aria-label="Download PDF for ${escapeText(request.requestNumber)}">Download PDF</button>
         ${request.status === "Pending" ? `
           <button class="table-action primary-action" type="button" data-paid-request="${request.id}">Mark Paid</button>
           <button class="table-action danger" type="button" data-cancel-request="${request.id}">Cancel</button>
@@ -1217,8 +1245,8 @@ export function bindInventoryPage(root, store, notify, refresh) {
           } else {
             notify(`${result.request.requestNumber} created. ${items.length} item${items.length === 1 ? "" : "s"} reserved.`);
           }
-        } catch {
-          notify("Payment Request created, but the image could not be prepared. Try again.", true);
+        } catch (error) {
+          notify(getSafeUserError(error, "document"), true);
         }
       } catch (error) {
         if (error?.mutationSucceeded === true) {
@@ -1342,11 +1370,19 @@ export function bindInventoryPage(root, store, notify, refresh) {
     refresh();
   };
 
+  root.addEventListener("keydown", (event) => {
+    const summary = event.target.closest(".payment-request-snapshot-details > summary");
+    if (!summary || !["Enter", " "].includes(event.key)) return;
+    event.preventDefault();
+    summary.parentElement.open = !summary.parentElement.open;
+  });
+
   root.onclick = async (event) => {
     const button = event.target.closest("button");
     if (!button) return;
     if (button.dataset.busy === "true") return;
     const originalButtonText = button.textContent;
+    const isDocumentAction = Boolean(button.dataset.downloadRequest || button.dataset.downloadImageRequest);
 
     try {
       if (button.dataset.openInventory) {
@@ -1405,6 +1441,10 @@ export function bindInventoryPage(root, store, notify, refresh) {
       }
 
       if (button.dataset.downloadRequest) {
+        button.dataset.busy = "true";
+        button.disabled = true;
+        button.setAttribute("aria-busy", "true");
+        button.textContent = "Preparing PDF...";
         const request = store.paymentRequests.find((entry) => entry.id === button.dataset.downloadRequest);
         if (!request) throw new Error("Payment request not found.");
         const bytes = await createPaymentRequestPdf(request, {
@@ -1416,6 +1456,10 @@ export function bindInventoryPage(root, store, notify, refresh) {
       }
 
       if (button.dataset.downloadImageRequest) {
+        button.dataset.busy = "true";
+        button.disabled = true;
+        button.setAttribute("aria-busy", "true");
+        button.textContent = "Preparing Image...";
         const request = store.paymentRequests.find((entry) => entry.id === button.dataset.downloadImageRequest);
         if (!request) throw new Error("Payment request not found.");
         const blob = await createPaymentRequestImage(request, {
@@ -1534,11 +1578,12 @@ export function bindInventoryPage(root, store, notify, refresh) {
         refresh();
       }
     } catch (error) {
-      notify(getSafeUserError(error, "inventory"), true);
+      notify(getSafeUserError(error, isDocumentAction ? "document" : "inventory"), true);
     } finally {
       if (button.dataset.busy === "true") {
         button.dataset.busy = "false";
         button.disabled = false;
+        button.removeAttribute("aria-busy");
         button.textContent = originalButtonText;
       }
     }

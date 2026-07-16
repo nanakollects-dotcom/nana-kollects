@@ -21,7 +21,7 @@ insert into public.payment_requests (
   courier, discount, total_amount, status
 ) values
   ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1', '11111111-1111-1111-1111-111111111111', 'PR-TEST-001', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'Customer One', '09170000001', 'Test Address', 'Test Item 1', 100, 10, 'fee_now', 'J&T', 5, 105, 'Pending'),
-  ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2', '11111111-1111-1111-1111-111111111111', 'PR-TEST-002', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2', 'Rollback Customer', '09170000002', 'Test Address', 'Rollback Item', 120, 0, 'fee_now', 'J&T', 0, 999, 'Pending'),
+  ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2', '11111111-1111-1111-1111-111111111111', 'PR-TEST-002', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2', 'Rollback Customer', '09170000002', 'Test Address', 'Rollback Item', 120, 0, 'fee_now', 'J&T', 0, 120, 'Pending'),
   ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb3', '22222222-2222-2222-2222-222222222222', 'PR-TEST-003', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa3', 'Customer Two', '09170000003', 'Other Address', 'Other User Item', 140, 0, 'fee_now', 'J&T', 0, 140, 'Pending'),
   ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb4', '11111111-1111-1111-1111-111111111111', 'PR-TEST-004', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa4', 'Pickup Customer', '09170000004', null, 'Pickup Item', 160, 0, 'pickup', null, 0, 160, 'Pending'),
   ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb5', '11111111-1111-1111-1111-111111111111', 'PR-TEST-005', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa5', 'Failure Customer', '09170000005', 'Failure Address', 'Failure Item', 180, 0, 'fee_now', 'J&T', 0, 180, 'Pending');
@@ -81,13 +81,30 @@ begin
 end;
 $$;
 
+create or replace function public.fail_test_sale_insert()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.inventory_item_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2' then
+    raise exception 'Injected Sale creation failure.';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger fail_test_sale_insert
+before insert on public.sales
+for each row execute function public.fail_test_sale_insert();
+
 do $$
 begin
   begin
     perform public.mark_payment_request_paid('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2', 'GoTyme');
-    raise exception 'Expected Order total constraint failure.';
+    raise exception 'Expected injected Sale creation failure.';
   exception
-    when check_violation then null;
+    when raise_exception then
+      if sqlerrm <> 'Injected Sale creation failure.' then raise; end if;
   end;
 
   if (select status from public.payment_requests where id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2') <> 'Pending'
@@ -98,6 +115,9 @@ begin
   end if;
 end;
 $$;
+
+drop trigger fail_test_sale_insert on public.sales;
+drop function public.fail_test_sale_insert();
 
 set local role authenticated;
 select public.mark_payment_request_paid('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb4', 'GCash');

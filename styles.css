@@ -3048,27 +3048,27 @@ td:nth-child(n + 3) {
 }
 
 .inventory-table {
-  min-width: 1040px;
+  min-width: 1120px;
   table-layout: auto;
 }
 
-.inventory-table th:nth-child(4),
-.inventory-table td:nth-child(4),
 .inventory-table th:nth-child(5),
 .inventory-table td:nth-child(5),
-.inventory-table th:nth-child(7),
-.inventory-table td:nth-child(7),
+.inventory-table th:nth-child(6),
+.inventory-table td:nth-child(6),
 .inventory-table th:nth-child(8),
 .inventory-table td:nth-child(8),
 .inventory-table th:nth-child(9),
 .inventory-table td:nth-child(9),
 .inventory-table th:nth-child(10),
-.inventory-table td:nth-child(10) {
+.inventory-table td:nth-child(10),
+.inventory-table th:nth-child(11),
+.inventory-table td:nth-child(11) {
   text-align: center;
 }
 
-.inventory-table th:nth-child(10),
-.inventory-table td:nth-child(10) {
+.inventory-table th:nth-child(11),
+.inventory-table td:nth-child(11) {
   min-width: 112px;
   width: 112px;
   padding-left: 16px;
@@ -3084,6 +3084,43 @@ td:nth-child(n + 3) {
 .inventory-table .table-action {
   min-width: 64px;
   padding-inline: 14px;
+}
+
+.inventory-select-cell {
+  width: 68px;
+  text-align: center;
+}
+
+.inventory-select-cell input,
+.inventory-mobile-select input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+.inventory-select-cell input:disabled,
+.inventory-mobile-select input:disabled {
+  cursor: not-allowed;
+}
+
+.inventory-row-selected td,
+.inventory-card-selected {
+  background: #fff5f8;
+}
+
+.inventory-mobile-select {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .primary-action {
@@ -3948,6 +3985,46 @@ td:nth-child(n + 3) {
   margin-top: 16px;
 }
 
+.inventory-selection-summary {
+  position: fixed;
+  z-index: 50;
+  right: 24px;
+  bottom: 16px;
+  width: min(860px, calc(100vw - 48px));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px solid rgba(224, 123, 160, 0.45);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 12px 30px rgba(31, 35, 41, 0.14);
+  backdrop-filter: blur(10px);
+}
+
+.inventory-selection-spacer {
+  height: 88px;
+}
+
+.inventory-selection-summary > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.inventory-selection-summary span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.inventory-selection-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .payment-requests-panel td:first-child small {
   display: block;
   margin-top: 3px;
@@ -3958,6 +4035,63 @@ td:nth-child(n + 3) {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.payment-request-snapshot-details {
+  margin-top: 8px;
+  min-width: min(440px, 70vw);
+}
+
+.payment-request-snapshot-details summary {
+  width: fit-content;
+  color: var(--accent-dark);
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.payment-request-snapshot-details summary:focus-visible {
+  border-radius: 4px;
+  outline: 3px solid rgba(224, 123, 160, 0.3);
+  outline-offset: 3px;
+}
+
+.payment-request-snapshot-items,
+.payment-request-snapshot-totals {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0 0;
+}
+
+.payment-request-snapshot-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 12px;
+  align-items: baseline;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+
+.payment-request-snapshot-item > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.payment-request-snapshot-totals > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.payment-request-snapshot-totals dt,
+.payment-request-snapshot-totals dd {
+  margin: 0;
+  font-size: 12px;
+}
+
+.payment-request-snapshot-totals dt {
+  color: var(--muted);
 }
 
 .payment-request-status-card {
@@ -4026,6 +4160,64 @@ td:nth-child(n + 3) {
 
 .payment-request-section {
   width: 100%;
+}
+
+.payment-request-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.payment-request-section-heading span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.payment-request-item-list {
+  display: grid;
+  gap: 8px;
+  max-height: 310px;
+  overflow-y: auto;
+  padding-right: 3px;
+}
+
+.payment-request-item-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 150px) minmax(90px, auto) auto;
+  align-items: end;
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.payment-request-item-copy {
+  display: grid;
+  align-self: center;
+  min-width: 0;
+  gap: 4px;
+}
+
+.payment-request-item-copy strong,
+.payment-request-item-copy span {
+  overflow-wrap: anywhere;
+}
+
+.payment-request-item-copy span,
+.payment-request-empty-selection {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.payment-request-item-row label {
+  margin: 0;
+}
+
+.payment-request-item-row > .money-cell {
+  align-self: center;
 }
 
 .payment-request-field-grid {
@@ -4790,6 +4982,18 @@ td:nth-child(n + 3) {
 }
 
 @media (max-width: 639px) {
+  .payment-request-snapshot-details {
+    min-width: min(290px, 74vw);
+  }
+
+  .payment-request-snapshot-item {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .payment-request-snapshot-item > strong:last-child {
+    grid-column: 2;
+  }
+
   .orders-view-tabs {
     display: grid;
     width: 100%;
@@ -4836,6 +5040,47 @@ td:nth-child(n + 3) {
 @page {
   size: A4 portrait;
   margin: 12mm;
+}
+
+@media (max-width: 639px) {
+  .inventory-selection-summary {
+    bottom: 8px;
+    left: 8px;
+    right: 8px;
+    width: auto;
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .inventory-selection-spacer {
+    height: 132px;
+  }
+
+  .inventory-selection-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
+  }
+
+  .inventory-selection-actions button {
+    min-width: 0;
+    padding-inline: 10px;
+  }
+
+  .payment-request-item-row {
+    grid-template-columns: minmax(0, 1fr) minmax(104px, 128px);
+    align-items: end;
+    gap: 8px;
+  }
+
+  .payment-request-item-row > .money-cell {
+    text-align: left;
+  }
+
+  .payment-request-item-row > .table-action {
+    justify-self: stretch;
+  }
 }
 
 @media print {

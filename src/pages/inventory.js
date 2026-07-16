@@ -9,12 +9,13 @@ import {
   cancelPaymentRequest,
   markPaymentRequestPaid,
   savePaymentConfiguration,
+  syncSupabaseStore,
   PAYMENT_STATUSES,
   PLATFORMS,
   STATUSES,
 } from "../services/repository.js";
 import { bindForm, emptyState, modal, pageHeader } from "../components/ui.js";
-import { formatMoney } from "../components/format.js";
+import { formatDate, formatMoney } from "../components/format.js";
 import { calculatePaymentRequestTotal, COURIER_OPTIONS, displayCourier, isPaymentConfigurationComplete, localDateInputValue, PAYMENT_METHODS, SHIPPING_MODE_LABELS, SHIPPING_MODES, validatePaymentRequestRequiredFields } from "../core/paymentRequests.js";
 import { createPaymentRequestPdf, downloadPaymentRequestPdf } from "../services/paymentRequestPdf.js";
 import { createPaymentRequestImage, sharePaymentRequestImage } from "../services/paymentRequestImage.js";
@@ -29,7 +30,10 @@ let collectionFilter = "all";
 let ageFilter = "all";
 let costFilter = "all";
 let inventoryDraft = null;
-let paymentRequestItemId = null;
+const selectedInventoryIds = new Set();
+const paymentRequestLinePrices = new Map();
+let paymentRequestOpen = false;
+let restorePaymentRequestFocus = false;
 let paymentConfigOpen = false;
 let paidRequestId = null;
 
@@ -42,7 +46,10 @@ export function resetInventoryPageState() {
   ageFilter = "all";
   costFilter = "all";
   inventoryDraft = null;
-  paymentRequestItemId = null;
+  selectedInventoryIds.clear();
+  paymentRequestLinePrices.clear();
+  paymentRequestOpen = false;
+  restorePaymentRequestFocus = false;
   paymentConfigOpen = false;
   paidRequestId = null;
 }
@@ -123,6 +130,69 @@ const actionDisabled = (current, next) => canRunStatusAction(current, next) ? ""
 const hasPendingPaymentRequest = (store, itemId) => (store.paymentRequests || []).some(
   (request) => paymentRequestIncludesItem(request, itemId) && request.status === "Pending",
 );
+
+const isSelectableInventoryItem = (store, item) => Boolean(
+  item && item.status === STATUSES.AVAILABLE && !hasPendingPaymentRequest(store, item.id),
+);
+
+const selectedInventoryItems = (store) => [...selectedInventoryIds]
+  .map((itemId) => store.inventory.find((item) => item.id === itemId))
+  .filter(Boolean);
+
+const selectedLineItems = (store) => selectedInventoryItems(store).map((item) => ({
+  ...item,
+  unitPrice: paymentRequestLinePrices.has(item.id)
+    ? paymentRequestLinePrices.get(item.id)
+    : item.price,
+}));
+
+export function getInventorySelection(store) {
+  const items = selectedLineItems(store);
+  return {
+    ids: items.map((item) => item.id),
+    items,
+    count: items.length,
+    subtotal: items.reduce((sum, item) => sum + Number(item.unitPrice || 0), 0),
+  };
+}
+
+export function setInventoryItemSelected(store, itemId, selected) {
+  const item = store.inventory.find((entry) => entry.id === itemId);
+  if (!item) return { ok: false, message: "That inventory item is unavailable." };
+
+  if (!selected) {
+    selectedInventoryIds.delete(itemId);
+    paymentRequestLinePrices.delete(itemId);
+    return { ok: true };
+  }
+
+  if (!isSelectableInventoryItem(store, item)) {
+    return { ok: false, message: "Only Available items can be selected." };
+  }
+  if (selectedInventoryIds.has(itemId)) return { ok: true };
+  if (selectedInventoryIds.size >= 50) {
+    return { ok: false, message: "Choose no more than 50 items for one Payment Request." };
+  }
+
+  selectedInventoryIds.add(itemId);
+  paymentRequestLinePrices.set(itemId, item.price);
+  return { ok: true };
+}
+
+export function clearInventorySelection() {
+  selectedInventoryIds.clear();
+  paymentRequestLinePrices.clear();
+}
+
+export function openInventoryPaymentRequest(store) {
+  const selection = getInventorySelection(store);
+  if (!selection.count) return false;
+  selection.items.forEach((item) => {
+    if (!paymentRequestLinePrices.has(item.id)) paymentRequestLinePrices.set(item.id, item.price);
+  });
+  paymentRequestOpen = true;
+  return true;
+}
 
 const requestStatusClass = (status) => {
   if (status === "Paid") return "green-pill";
@@ -438,8 +508,23 @@ function inventoryForm(store) {
 }
 
 function paymentRequestForm(store) {
-  const item = store.inventory.find((entry) => entry.id === paymentRequestItemId);
-  if (!item) return "";
+  const items = selectedLineItems(store);
+  const itemCount = items.length;
+  const merchandiseSubtotal = items.reduce((sum, item) => sum + Number(item.unitPrice || 0), 0);
+  const itemRows = items.map((item) => `
+    <div class="payment-request-item-row" data-request-item-row="${escapeText(item.id)}">
+      <div class="payment-request-item-copy">
+        <strong>${escapeText(item.name)}</strong>
+        <span><span class="mono">${escapeText(item.sku)}</span> &middot; Quantity 1</span>
+      </div>
+      <label>
+        Unit Price
+        <input type="number" min="0.01" step="0.01" value="${escapeText(item.unitPrice)}" data-line-price="${escapeText(item.id)}" aria-label="Unit price for ${escapeText(item.name)}" required />
+      </label>
+      <strong class="money-cell" data-line-total="${escapeText(item.id)}">${formatMoney(item.unitPrice)}</strong>
+      <button class="table-action danger" type="button" data-remove-selected-item="${escapeText(item.id)}" aria-label="Remove ${escapeText(item.name)} from this Payment Request">Remove</button>
+    </div>
+  `).join("");
 
   return modal(
     "Create Payment Request",
@@ -448,10 +533,20 @@ function paymentRequestForm(store) {
         <div class="modal-header">
           <div>
             <h2>Create Payment Request</h2>
-            <p>${escapeText(item.sku)} &middot; ${escapeText(item.name)}</p>
+            <p data-selected-item-count>${itemCount} selected item${itemCount === 1 ? "" : "s"}</p>
           </div>
           <button class="icon-btn" type="button" data-close-payment-request>Close</button>
         </div>
+
+        <section class="modal-section payment-request-section payment-request-items-section">
+          <div class="payment-request-section-heading">
+            <h3>Selected Items</h3>
+            <span data-selected-item-limit>${itemCount} of 50</span>
+          </div>
+          ${itemCount
+            ? `<div class="payment-request-item-list">${itemRows}</div>`
+            : `<p class="payment-request-empty-selection" role="status">Select at least one Available Inventory Item to continue.</p>`}
+        </section>
 
         <section class="modal-section payment-request-section">
           <h3>Customer</h3>
@@ -465,8 +560,6 @@ function paymentRequestForm(store) {
         <section class="modal-section payment-request-section">
           <h3>Order</h3>
           <div class="payment-request-field-grid">
-            <label>Item Name<input value="${escapeText(item.name)}" readonly /></label>
-            <label>Selling Price<input type="number" name="itemPrice" min="0" step="0.01" value="${item.price}" required /></label>
             <label>Shipping Fee
               <select name="shippingMode">
                 <option value="${SHIPPING_MODES.FEE_NOW}">${SHIPPING_MODE_LABELS[SHIPPING_MODES.FEE_NOW]}</option>
@@ -490,15 +583,15 @@ function paymentRequestForm(store) {
 
         <section class="modal-section payment-request-summary payment-request-section">
           <h3>Summary</h3>
-          <div><span>Subtotal</span><strong data-request-subtotal>${formatMoney(item.price)}</strong></div>
+          <div><span>Merchandise Subtotal</span><strong data-request-subtotal>${formatMoney(merchandiseSubtotal)}</strong></div>
           <div data-request-shipping-row hidden><span data-request-shipping-label>Shipping Fee</span><strong data-request-shipping>${formatMoney(0)}</strong></div>
           <div data-request-courier-row hidden><span>Courier</span><strong data-request-courier></strong></div>
           <div data-request-discount-row hidden><span>Discount</span><strong data-request-discount>${formatMoney(0)}</strong></div>
-          <div class="request-total"><span data-request-total-label>Total Amount Due</span><strong data-request-total>${formatMoney(item.price)}</strong></div>
+          <div class="request-total"><span data-request-total-label>Total Amount Due</span><strong data-request-total>${formatMoney(merchandiseSubtotal)}</strong></div>
         </section>
 
         <div class="button-row">
-          <button class="primary-btn" type="submit" data-saving-text="Generating...">Generate Payment Request</button>
+          <button class="primary-btn" type="submit" data-saving-text="Generating..." ${itemCount ? "" : "disabled"}>Generate Payment Request</button>
           <button class="secondary-btn" type="button" data-close-payment-request>Cancel</button>
         </div>
       </form>
@@ -560,7 +653,7 @@ function paidRequestForm(store) {
               ${PAYMENT_METHODS.map((method) => `<option value="${method}">${method}</option>`).join("")}
             </select>
           </label>
-          <p class="modal-copy">This finalizes the existing sale at ${formatMoney(request.itemPrice)}.</p>
+          <p class="modal-copy">This finalizes the full ${request.items?.length || 1}-item transaction at ${formatMoney(request.totalAmount)}.</p>
         </section>
         <div class="button-row">
           <button class="primary-btn" type="submit" data-saving-text="Confirming...">Mark Paid</button>
@@ -573,12 +666,40 @@ function paidRequestForm(store) {
 
 function renderPaymentRequests(store) {
   const requests = store.paymentRequests || [];
-  const rows = requests.map((request) => `
+  const rows = requests.map((request) => {
+    const items = request.items?.length
+      ? request.items
+      : [{ itemName: request.itemName, sku: request.sku, quantity: 1 }];
+    const firstItem = items[0] || {};
+    const moreCount = Math.max(0, items.length - 1);
+    const summary = `${firstItem.itemName || "Item"}${moreCount ? ` +${moreCount} more` : ""}`;
+    const itemDetails = items.map((item) => `
+      <div class="payment-request-snapshot-item">
+        <span><span class="mono">${escapeText(item.sku || "—")}</span> ${escapeText(item.itemName || "Item")}</span>
+        <strong>${Number(item.quantity || 1)} × ${formatMoney(item.unitPrice ?? item.lineTotal ?? 0)}</strong>
+        <strong>${formatMoney(item.lineTotal ?? item.unitPrice ?? 0)}</strong>
+      </div>
+    `).join("");
+    return `
     <tr>
-      <td><strong>${escapeText(request.requestNumber)}</strong><small>${escapeText(request.itemName)}</small></td>
+      <td>
+        <strong>${escapeText(request.requestNumber)}</strong>
+        <small>${escapeText(summary)} &middot; ${items.length} item${items.length === 1 ? "" : "s"}</small>
+        <details class="payment-request-snapshot-details">
+          <summary>View details</summary>
+          <div class="payment-request-snapshot-items">${itemDetails}</div>
+          <dl class="payment-request-snapshot-totals">
+            <div><dt>Subtotal</dt><dd>${formatMoney(request.merchandiseSubtotal ?? request.itemPrice)}</dd></div>
+            <div><dt>Discount</dt><dd>${formatMoney(request.discount)}</dd></div>
+            <div><dt>Shipping</dt><dd>${request.shippingMode === SHIPPING_MODES.TO_FOLLOW ? "To follow" : request.shippingMode === SHIPPING_MODES.PICKUP ? "Pickup" : formatMoney(request.shippingFee)}</dd></div>
+            <div><dt>Total</dt><dd>${formatMoney(request.totalAmount)}</dd></div>
+          </dl>
+        </details>
+      </td>
       <td>${escapeText(request.customerName)}</td>
       <td class="money-cell">${formatMoney(request.totalAmount)}</td>
       <td><span class="pill ${requestStatusClass(request.status)}">${request.status}</span></td>
+      <td>${formatDate(request.issuedAt || request.createdAt)}</td>
       <td class="actions-cell request-actions">
         <button class="table-action primary-action" type="button" data-download-image-request="${request.id}">Share / Save Image</button>
         <button class="table-action" type="button" data-download-request="${request.id}">Download PDF</button>
@@ -588,7 +709,8 @@ function renderPaymentRequests(store) {
         ` : ""}
       </td>
     </tr>
-  `).join("");
+  `;
+  }).join("");
 
   return `
     <section class="panel payment-requests-panel">
@@ -604,12 +726,30 @@ function renderPaymentRequests(store) {
       ${requests.length ? `
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Request</th><th>Customer</th><th class="money-cell">Amount</th><th>Status</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Request</th><th>Customer</th><th class="money-cell">Amount</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead>
             <tbody>${rows}</tbody>
           </table>
         </div>
       ` : emptyState("No payment requests yet", "Create one from an Available inventory item.")}
     </section>
+  `;
+}
+
+function renderInventorySelectionSummary(store) {
+  const selection = getInventorySelection(store);
+  if (!selection.count) return "";
+  return `
+    <div class="inventory-selection-spacer" aria-hidden="true"></div>
+    <aside class="inventory-selection-summary" aria-label="Inventory selection summary">
+      <div aria-live="polite">
+        <strong>${selection.count} item${selection.count === 1 ? "" : "s"} selected</strong>
+        <span>Subtotal: ${formatMoney(selection.subtotal)}</span>
+      </div>
+      <div class="inventory-selection-actions">
+        <button class="secondary-btn" type="button" data-clear-inventory-selection>Clear Selection</button>
+        <button class="primary-btn" type="button" data-create-selected-request>Create Payment Request</button>
+      </div>
+    </aside>
   `;
 }
 
@@ -646,9 +786,14 @@ function renderInventoryResults(store) {
     .map((item) => {
       const profitPotential = getInventoryProfitPotential(item);
       const margin = getInventoryMarginPercent(item);
+      const selected = selectedInventoryIds.has(item.id);
+      const selectable = isSelectableInventoryItem(store, item);
 
       return `
-        <tr>
+        <tr class="${selected ? "inventory-row-selected" : ""}">
+          <td class="inventory-select-cell">
+            <input type="checkbox" data-select-inventory="${escapeText(item.id)}" aria-label="Select ${escapeText(item.name)}" ${selected ? "checked" : ""} ${selectable || selected ? "" : "disabled"} />
+          </td>
           <td><span class="mono">${escapeText(item.sku)}</span></td>
           <td><strong>${escapeText(item.name)}</strong></td>
           <td>${escapeText(item.collectionId)}</td>
@@ -673,9 +818,11 @@ function renderInventoryResults(store) {
     .map((item) => {
       const profitPotential = getInventoryProfitPotential(item);
       const margin = getInventoryMarginPercent(item);
+      const selected = selectedInventoryIds.has(item.id);
+      const selectable = isSelectableInventoryItem(store, item);
 
       return `
-        <article class="record-card">
+        <article class="record-card inventory-select-card ${selected ? "inventory-card-selected" : ""}">
           <div class="record-card-head">
             <div>
               <strong>${escapeText(item.name)}</strong>
@@ -684,6 +831,11 @@ function renderInventoryResults(store) {
 
             <span class="pill ${statusClass(item.status)}">${item.status}</span>
           </div>
+
+          <label class="inventory-mobile-select">
+            <input type="checkbox" data-select-inventory="${escapeText(item.id)}" ${selected ? "checked" : ""} ${selectable || selected ? "" : "disabled"} />
+            <span>${selected ? "Selected for Payment Request" : selectable ? "Select for Payment Request" : "Unavailable for selection"}</span>
+          </label>
 
           <div class="record-grid">
             <div><span>Collection</span><strong>${escapeText(item.collectionId)}</strong></div>
@@ -715,6 +867,7 @@ function renderInventoryResults(store) {
               <table class="inventory-table">
                 <thead>
                   <tr>
+                    <th class="inventory-select-cell">Select</th>
                     <th>SKU</th>
                     <th>Name</th>
                     <th>Collection</th>
@@ -808,10 +961,12 @@ export function renderInventoryPage(store) {
 
     ${renderInventoryResults(store)}
 
+    ${renderInventorySelectionSummary(store)}
+
     ${renderPaymentRequests(store)}
 
     ${isModalOpen ? inventoryForm(store) : ""}
-    ${paymentRequestItemId ? paymentRequestForm(store) : ""}
+    ${paymentRequestOpen ? paymentRequestForm(store) : ""}
     ${paymentConfigOpen ? paymentConfigForm(store) : ""}
     ${paidRequestId ? paidRequestForm(store) : ""}
   `;
@@ -823,6 +978,7 @@ export function bindInventoryPage(root, store, notify, refresh) {
   const configForm = root.querySelector("#payment-config-form");
   const paidForm = root.querySelector("#payment-paid-form");
   const editingItem = store.inventory.find((item) => item.id === editingId);
+  let updatePaymentRequestSummary = () => {};
 
   if (form && editingItem) {
     form.sku.value = editingItem.sku;
@@ -883,6 +1039,35 @@ export function bindInventoryPage(root, store, notify, refresh) {
   }
 
   if (paymentForm) {
+    const focusablePaymentRequestControls = () => Array.from(paymentForm.querySelectorAll(
+      'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled])',
+    )).filter((control) => !control.hidden && control.offsetParent !== null);
+    paymentForm.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        paymentRequestOpen = false;
+        paymentRequestLinePrices.clear();
+        restorePaymentRequestFocus = true;
+        refresh();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const controls = focusablePaymentRequestControls();
+      if (!controls.length) return;
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    });
+    requestAnimationFrame(() => {
+      if (!paymentForm.contains(document.activeElement)) paymentForm.elements.customerName?.focus();
+    });
+
     const today = localDateInputValue();
     if (paymentForm.elements.validUntil) paymentForm.elements.validUntil.min = today;
 
@@ -921,11 +1106,26 @@ export function bindInventoryPage(root, store, notify, refresh) {
       paymentForm.elements[name]?.addEventListener("change", () => validatePaymentRequestForm(false));
     });
 
-    const updateSummary = () => {
+    updatePaymentRequestSummary = () => {
       try {
+        const lineItems = Array.from(paymentForm.querySelectorAll("[data-line-price]")).map((input) => ({
+          inventoryItemId: input.dataset.linePrice,
+          unitPrice: input.value,
+          quantity: 1,
+        }));
+        lineItems.forEach((lineItem) => {
+          paymentRequestLinePrices.set(lineItem.inventoryItemId, Number(lineItem.unitPrice));
+          const lineTotal = paymentForm.querySelector(`[data-line-total="${lineItem.inventoryItemId}"]`);
+          if (lineTotal) lineTotal.textContent = formatMoney(lineItem.unitPrice);
+        });
+        if (!lineItems.length) {
+          root.querySelector("[data-request-subtotal]").textContent = formatMoney(0);
+          root.querySelector("[data-request-total]").textContent = "--";
+          return;
+        }
         const shippingMode = paymentForm.elements.shippingMode.value;
         const amounts = calculatePaymentRequestTotal(
-          paymentForm.elements.itemPrice.value,
+          lineItems,
           paymentForm.elements.shippingFee.value,
           paymentForm.elements.discount.value,
           shippingMode,
@@ -957,13 +1157,18 @@ export function bindInventoryPage(root, store, notify, refresh) {
         root.querySelector("[data-request-total]").textContent = "--";
       }
     };
-    ["itemPrice", "shippingFee", "discount", "shippingMode", "courier", "customCourier"].forEach((name) => {
-      paymentForm.elements[name]?.addEventListener("input", updateSummary);
-      paymentForm.elements[name]?.addEventListener("change", updateSummary);
+    paymentForm.querySelectorAll("[data-line-price]").forEach((input) => {
+      input.addEventListener("input", updatePaymentRequestSummary);
+      input.addEventListener("change", updatePaymentRequestSummary);
     });
-    updateSummary();
+    ["shippingFee", "discount", "shippingMode", "courier", "customCourier"].forEach((name) => {
+      paymentForm.elements[name]?.addEventListener("input", updatePaymentRequestSummary);
+      paymentForm.elements[name]?.addEventListener("change", updatePaymentRequestSummary);
+    });
+    updatePaymentRequestSummary();
 
     bindForm(paymentForm, async (data) => {
+      let mutationAttempted = false;
       try {
         const requiredFields = validatePaymentRequestForm(true);
         if (Object.keys(requiredFields.errors).length) return false;
@@ -978,14 +1183,24 @@ export function bindInventoryPage(root, store, notify, refresh) {
         if (!isPaymentConfigurationComplete(store.paymentConfig)) {
           throw new Error("Set up GCash details and the GoTyme QR before generating a request.");
         }
-        const amounts = calculatePaymentRequestTotal(data.itemPrice, data.shippingFee, data.discount, data.shippingMode);
+        const items = Array.from(paymentForm.querySelectorAll("[data-line-price]")).map((input) => ({
+          inventoryItemId: input.dataset.linePrice,
+          unitPrice: input.value,
+          quantity: 1,
+        }));
+        if (items.some((item) => !Number.isFinite(Number(item.unitPrice)) || Number(item.unitPrice) <= 0)) {
+          throw new Error("Item prices must be higher than zero.");
+        }
+        const amounts = calculatePaymentRequestTotal(items, data.shippingFee, data.discount, data.shippingMode);
+        mutationAttempted = true;
         const result = await addPaymentRequest({
           ...data,
-          itemId: paymentRequestItemId,
+          items,
           paymentConfig: store.paymentConfig,
           ...amounts,
         });
-        paymentRequestItemId = null;
+        clearInventorySelection();
+        paymentRequestOpen = false;
         refresh();
         try {
           const blob = await createPaymentRequestImage(result.request, {
@@ -1000,16 +1215,33 @@ export function bindInventoryPage(root, store, notify, refresh) {
           } else if (imageResult === "opened" || imageResult === "mobile-download") {
             notify("Payment Request created. Image created. Use your browser's Share or Save Image option.");
           } else {
-            notify(`${result.request.requestNumber} created. Item reserved.`);
+            notify(`${result.request.requestNumber} created. ${items.length} item${items.length === 1 ? "" : "s"} reserved.`);
           }
         } catch {
           notify("Payment Request created, but the image could not be prepared. Try again.", true);
         }
       } catch (error) {
+        if (error?.mutationSucceeded === true) {
+          clearInventorySelection();
+          paymentRequestOpen = false;
+          refresh();
+        } else if (mutationAttempted) {
+          try {
+            await syncSupabaseStore();
+            refresh();
+          } catch {
+            // Preserve the immutable selection when even the recovery refresh is unavailable.
+          }
+        }
         notify(getSafeUserError(error, "payment_request"), true);
         return false;
       }
     });
+  }
+
+  if (!paymentForm && restorePaymentRequestFocus) {
+    restorePaymentRequestFocus = false;
+    requestAnimationFrame(() => root.querySelector("[data-create-selected-request]")?.focus());
   }
 
   if (configForm) {
@@ -1080,6 +1312,36 @@ export function bindInventoryPage(root, store, notify, refresh) {
   costInput?.addEventListener("input", updateCostPendingIndicator);
   updateCostPendingIndicator();
 
+  const openSelectedPaymentRequest = () => {
+    const selection = getInventorySelection(store);
+    if (!selection.count) {
+      notify("Select at least one Available item first.", true);
+      return false;
+    }
+    if (!isPaymentConfigurationComplete(store.paymentConfig)) {
+      paymentConfigOpen = true;
+      notify("Set up payment details before creating a request.", true);
+      return false;
+    }
+    openInventoryPaymentRequest(store);
+    restorePaymentRequestFocus = false;
+    editingId = null;
+    isModalOpen = false;
+    inventoryDraft = null;
+    return true;
+  };
+
+  root.onchange = (event) => {
+    const control = event.target.closest("[data-select-inventory]");
+    if (!control) return;
+    const result = setInventoryItemSelected(store, control.dataset.selectInventory, control.checked);
+    if (!result.ok) {
+      control.checked = false;
+      notify(result.message, true);
+    }
+    refresh();
+  };
+
   root.onclick = async (event) => {
     const button = event.target.closest("button");
     if (!button) return;
@@ -1095,16 +1357,34 @@ export function bindInventoryPage(root, store, notify, refresh) {
       }
 
       if (button.dataset.createRequest) {
-        if (!isPaymentConfigurationComplete(store.paymentConfig)) {
-          paymentConfigOpen = true;
-          notify("Set up payment details before creating a request.", true);
-        } else {
-          paymentRequestItemId = button.dataset.createRequest;
-          editingId = null;
-          isModalOpen = false;
-          inventoryDraft = null;
-        }
+        clearInventorySelection();
+        setInventoryItemSelected(store, button.dataset.createRequest, true);
+        openSelectedPaymentRequest();
         refresh();
+      }
+
+      if (button.hasAttribute("data-create-selected-request")) {
+        if (openSelectedPaymentRequest()) refresh();
+      }
+
+      if (button.hasAttribute("data-clear-inventory-selection")) {
+        clearInventorySelection();
+        paymentRequestOpen = false;
+        refresh();
+      }
+
+      if (button.dataset.removeSelectedItem) {
+        setInventoryItemSelected(store, button.dataset.removeSelectedItem, false);
+        button.closest("[data-request-item-row]")?.remove();
+        const count = selectedInventoryIds.size;
+        const countLabel = root.querySelector("[data-selected-item-count]");
+        const limitLabel = root.querySelector("[data-selected-item-limit]");
+        if (countLabel) countLabel.textContent = `${count} selected item${count === 1 ? "" : "s"}`;
+        if (limitLabel) limitLabel.textContent = `${count} of 50`;
+        const submit = paymentForm?.querySelector('button[type="submit"]');
+        if (submit) submit.disabled = count === 0;
+        updatePaymentRequestSummary();
+        if (!count) notify("Select at least one Available item to continue.", true);
       }
 
       if (button.hasAttribute("data-open-payment-config")) {
@@ -1118,7 +1398,9 @@ export function bindInventoryPage(root, store, notify, refresh) {
       }
 
       if (button.hasAttribute("data-close-payment-request")) {
-        paymentRequestItemId = null;
+        paymentRequestOpen = false;
+        paymentRequestLinePrices.clear();
+        restorePaymentRequestFocus = true;
         refresh();
       }
 
@@ -1159,9 +1441,9 @@ export function bindInventoryPage(root, store, notify, refresh) {
       }
 
       if (button.dataset.cancelRequest) {
-        if (!confirm("Cancel this payment request and make the item available again?")) return;
+        if (!confirm("Cancel this entire payment request and release all linked items?")) return;
         await cancelPaymentRequest(button.dataset.cancelRequest);
-        notify("Payment Request cancelled. Item released.");
+        notify("Payment Request cancelled. Linked items released.");
         refresh();
       }
 

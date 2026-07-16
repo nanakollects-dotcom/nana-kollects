@@ -15,6 +15,7 @@ const SAFE_MESSAGE_BY_EXACT_TEXT = new Map([
   ["choose a valid item list.", "Choose a valid item list."],
   ["enter valid item prices.", "Enter valid item prices."],
   ["item prices cannot be negative.", "Item prices cannot be negative."],
+  ["item prices must be higher than zero.", "Enter a selling price higher than zero for every item."],
   ["serialized item quantity must be one.", "Serialized item quantity must be one."],
   ["each item can be selected only once.", "Each item can be selected only once."],
   ["discount must not exceed the merchandise subtotal.", "Discount must not exceed the merchandise subtotal."],

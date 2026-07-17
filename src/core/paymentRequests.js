@@ -54,9 +54,7 @@ export function validatePaymentRequestRequiredFields(input = {}, today = localDa
   const errors = {};
 
   if (!customerName) errors.customerName = "Customer name is required.";
-  if (!compactMobile) {
-    errors.customerContact = "Mobile number is required.";
-  } else if (!customerContact) {
+  if (compactMobile && !customerContact) {
     errors.customerContact = "Enter a valid Philippine mobile number.";
   }
   if (!validUntil) {

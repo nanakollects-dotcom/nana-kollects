@@ -218,9 +218,11 @@ export async function createPaymentRequestImage(request, config = {}) {
   let rendered = detail("Customer Name", model.customerName, leftX, leftY, 410);
   svg += rendered.svg;
   leftY = rendered.y;
-  rendered = detail("Mobile Number", model.customerContact, leftX, leftY, 410);
-  svg += rendered.svg;
-  leftY = rendered.y;
+  if (model.customerContact) {
+    rendered = detail("Mobile Number", model.customerContact, leftX, leftY, 410);
+    svg += rendered.svg;
+    leftY = rendered.y;
+  }
   rendered = detail("Shipping Address", model.shippingAddress, leftX, leftY, 410);
   svg += rendered.svg;
   leftY = rendered.y;

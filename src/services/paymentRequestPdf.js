@@ -163,7 +163,9 @@ export async function createPaymentRequestPdf(request, config = {}) {
   let leftY = y - 22;
   let rightY = y - 22;
   leftY = detail("Customer Name", model.customerName, margin, leftY, columnWidth);
-  leftY = detail("Mobile Number", model.customerContact, margin, leftY, columnWidth);
+  if (model.customerContact) {
+    leftY = detail("Mobile Number", model.customerContact, margin, leftY, columnWidth);
+  }
   leftY = detail("Shipping Method", model.shippingMethod, margin, leftY, columnWidth);
   leftY = detail("Shipping Address", model.shippingAddress, margin, leftY, columnWidth);
   leftY = detail("Courier", displayCourier(model.courier), margin, leftY, columnWidth);

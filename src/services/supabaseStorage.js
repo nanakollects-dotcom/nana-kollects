@@ -376,7 +376,7 @@ export async function createSupabasePaymentRequest(input) {
       unit_price: item.unitPrice,
     })),
     p_customer_name: requiredFields.values.customerName,
-    p_customer_contact: requiredFields.values.customerContact,
+    p_customer_contact: requiredFields.values.customerContact || null,
     p_shipping_address: String(input.shippingAddress || "").trim(),
     p_shipping_fee: amounts.shippingFee,
     p_shipping_mode: shippingMode,

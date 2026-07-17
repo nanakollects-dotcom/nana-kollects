@@ -553,7 +553,7 @@ function paymentRequestForm(store) {
           <h3>Customer</h3>
           <div class="payment-request-field-grid">
             <label>Customer Name<input name="customerName" /><small class="payment-request-field-error" data-payment-request-error="customerName" hidden></small></label>
-            <label>Mobile Number<input name="customerContact" inputmode="tel" autocomplete="tel" /><small class="payment-request-field-error" data-payment-request-error="customerContact" hidden></small></label>
+            <label>Mobile Number (Optional)<input name="customerContact" inputmode="tel" autocomplete="tel" placeholder="Optional" /><small class="payment-request-field-error" data-payment-request-error="customerContact" hidden></small></label>
             <label class="full-span">Shipping Address<textarea name="shippingAddress" rows="2" placeholder="Optional"></textarea></label>
           </div>
         </section>
@@ -697,7 +697,7 @@ function renderPaymentRequests(store) {
     const snapshotMeta = documentModel ? `
       <dl class="payment-request-snapshot-meta">
         <div><dt>Customer</dt><dd>${escapeText(documentModel.customerName)}</dd></div>
-        <div><dt>Contact</dt><dd>${escapeText(documentModel.customerContact || "Unavailable")}</dd></div>
+        ${documentModel.customerContact ? `<div><dt>Contact</dt><dd>${escapeText(documentModel.customerContact)}</dd></div>` : ""}
         <div><dt>Issue Date</dt><dd>${formatDate(documentModel.issuedAt)}</dd></div>
         <div><dt>Status</dt><dd>${escapeText(documentModel.status)}</dd></div>
         <div><dt>Payment</dt><dd>${escapeText(documentModel.paymentMethod || "GCash / GoTyme")}</dd></div>

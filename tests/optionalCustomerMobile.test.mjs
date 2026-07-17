@@ -158,6 +158,7 @@ test("form, details, and Order rendering handle an absent mobile number without 
   });
   try {
     const inventoryPage = await server.ssrLoadModule("/src/pages/inventory.js?optional-contact=ui");
+    const paymentRequestsPage = await server.ssrLoadModule("/src/pages/paymentRequests.js?optional-contact=ui");
     const ordersPage = await server.ssrLoadModule("/src/pages/orders.js?optional-contact=ui");
     const inventory = [{
       id: "item-one",
@@ -187,7 +188,7 @@ test("form, details, and Order rendering handle an absent mobile number without 
     assert.doesNotMatch(formHtml, /Mobile number is required/);
 
     store.paymentRequests = [request("")];
-    const detailHtml = inventoryPage.renderInventoryPage(store);
+    const detailHtml = paymentRequestsPage.renderPaymentRequestsPage(store);
     assert.doesNotMatch(detailHtml, /<dt>Contact<\/dt>/);
 
     const orderHtml = ordersPage.renderOrdersPage({

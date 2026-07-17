@@ -4009,6 +4009,156 @@ td:nth-child(n + 3) {
   margin-top: 16px;
 }
 
+.inventory-page-actions,
+.inventory-payment-request-success,
+.inventory-payment-request-success > div:last-child {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.inventory-payment-request-success {
+  justify-content: space-between;
+  gap: 14px;
+  padding: 16px;
+  border-color: rgba(46, 125, 83, 0.22);
+  background: var(--green-soft);
+}
+
+.inventory-payment-request-success > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.inventory-payment-request-success span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.payment-requests-toolbar {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.payment-request-list {
+  display: grid;
+  gap: 14px;
+}
+
+.payment-request-results {
+  min-height: 240px;
+}
+
+.payment-request-card {
+  min-width: 0;
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.payment-request-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.payment-request-card-head > div {
+  min-width: 0;
+}
+
+.payment-request-card-label {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.payment-request-card h2,
+.payment-request-card p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.payment-request-card h2 {
+  font-size: 20px;
+}
+
+.payment-request-card p {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.payment-request-card-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.payment-request-card-summary > div {
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+
+.payment-request-card-summary dt,
+.payment-request-card-summary dd {
+  margin: 0;
+}
+
+.payment-request-card-summary dt {
+  margin-bottom: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.payment-request-card-summary dd {
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.payment-request-card-actions {
+  display: flex;
+  align-items: stretch;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.payment-request-card-actions .table-action {
+  min-height: 40px;
+  padding: 8px 12px;
+}
+
+.payment-request-card .payment-request-snapshot-details {
+  min-width: 0;
+  margin-top: 0;
+  padding-top: 2px;
+  border-top: 1px solid var(--line);
+}
+
+.payment-request-card .payment-request-snapshot-details summary {
+  margin-top: 12px;
+  font-size: 13px;
+}
+
+.payment-request-details-body {
+  min-width: 0;
+}
+
 .inventory-selection-summary {
   position: fixed;
   z-index: 50;
@@ -4654,6 +4804,14 @@ td:nth-child(n + 3) {
     align-items: end;
   }
 
+  .payment-requests-toolbar {
+    grid-template-columns: minmax(260px, 1fr) repeat(2, minmax(150px, 190px));
+  }
+
+  .payment-request-card-summary {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
   .collection-hero-stats,
   .collection-money-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -4895,6 +5053,10 @@ td:nth-child(n + 3) {
     gap: 16px;
   }
 
+  .payment-requests-toolbar {
+    grid-template-columns: minmax(320px, 1fr) repeat(2, minmax(150px, 190px));
+  }
+
   .toolbar label {
     color: transparent;
   }
@@ -5057,6 +5219,37 @@ td:nth-child(n + 3) {
 }
 
 @media (max-width: 639px) {
+  .inventory-page-actions,
+  .inventory-payment-request-success,
+  .inventory-payment-request-success > div:last-child {
+    width: 100%;
+  }
+
+  .inventory-page-actions > button,
+  .inventory-payment-request-success button {
+    flex: 1 1 140px;
+  }
+
+  .payment-request-card {
+    gap: 14px;
+    padding: 14px;
+  }
+
+  .payment-request-card-head {
+    align-items: flex-start;
+  }
+
+  .payment-request-card-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .payment-request-card-actions .table-action {
+    width: 100%;
+    min-width: 0;
+    white-space: normal;
+  }
+
   .payment-request-snapshot-meta {
     grid-template-columns: 1fr;
   }

@@ -6,8 +6,6 @@ import {
   saveSupabaseInventoryItem,
   setSupabaseInventoryStatus,
   addPaymentRequest,
-  cancelPaymentRequest,
-  markPaymentRequestPaid,
   savePaymentConfiguration,
   syncSupabaseStore,
   PAYMENT_STATUSES,
@@ -16,12 +14,10 @@ import {
 } from "../services/repository.js";
 import { bindForm, emptyState, modal, pageHeader } from "../components/ui.js";
 import { formatDate, formatMoney } from "../components/format.js";
-import { calculatePaymentRequestTotal, COURIER_OPTIONS, displayCourier, isPaymentConfigurationComplete, localDateInputValue, PAYMENT_METHODS, SHIPPING_MODE_LABELS, SHIPPING_MODES, validatePaymentRequestRequiredFields } from "../core/paymentRequests.js";
-import { createPaymentRequestPdf, downloadPaymentRequestPdf } from "../services/paymentRequestPdf.js";
+import { calculatePaymentRequestTotal, COURIER_OPTIONS, displayCourier, isPaymentConfigurationComplete, localDateInputValue, SHIPPING_MODE_LABELS, SHIPPING_MODES, validatePaymentRequestRequiredFields } from "../core/paymentRequests.js";
 import { createPaymentRequestImage, sharePaymentRequestImage } from "../services/paymentRequestImage.js";
 import { getSafeUserError } from "../services/errorService.js";
 import { paymentRequestIncludesItem } from "../core/transactions.js";
-import { createPaymentRequestDocumentModel } from "../core/paymentRequestDocuments.js";
 
 let editingId = null;
 let isModalOpen = false;
@@ -36,7 +32,7 @@ const paymentRequestLinePrices = new Map();
 let paymentRequestOpen = false;
 let restorePaymentRequestFocus = false;
 let paymentConfigOpen = false;
-let paidRequestId = null;
+let createdPaymentRequestId = null;
 
 export function resetInventoryPageState() {
   editingId = null;
@@ -52,7 +48,7 @@ export function resetInventoryPageState() {
   paymentRequestOpen = false;
   restorePaymentRequestFocus = false;
   paymentConfigOpen = false;
-  paidRequestId = null;
+  createdPaymentRequestId = null;
 }
 
 const escapeText = (value) =>
@@ -194,12 +190,6 @@ export function openInventoryPaymentRequest(store) {
   paymentRequestOpen = true;
   return true;
 }
-
-const requestStatusClass = (status) => {
-  if (status === "Paid") return "green-pill";
-  if (status === "Cancelled") return "gray-pill";
-  return "yellow-pill";
-};
 
 const readImageAsDataUrl = (file) => new Promise((resolve, reject) => {
   if (!file) {
@@ -633,136 +623,6 @@ function paymentConfigForm(store) {
   );
 }
 
-function paidRequestForm(store) {
-  const request = store.paymentRequests.find((entry) => entry.id === paidRequestId);
-  if (!request) return "";
-  return modal(
-    "Confirm Payment",
-    `
-      <form class="form-panel modal-form" id="payment-paid-form">
-        <div class="modal-header">
-          <div>
-            <h2>Confirm Payment</h2>
-            <p>${escapeText(request.requestNumber)}</p>
-          </div>
-          <button class="icon-btn" type="button" data-close-paid-request>Close</button>
-        </div>
-        <section class="modal-section">
-          <label>Payment Method
-            <select name="paymentMethod" required>
-              <option value="">Choose method</option>
-              ${PAYMENT_METHODS.map((method) => `<option value="${method}">${method}</option>`).join("")}
-            </select>
-          </label>
-          <p class="modal-copy">This finalizes the full ${request.items?.length || 1}-item transaction at ${formatMoney(request.totalAmount)}.</p>
-        </section>
-        <div class="button-row">
-          <button class="primary-btn" type="submit" data-saving-text="Confirming...">Mark Paid</button>
-          <button class="secondary-btn" type="button" data-close-paid-request>Cancel</button>
-        </div>
-      </form>
-    `,
-  );
-}
-
-function renderPaymentRequests(store) {
-  const requests = store.paymentRequests || [];
-  const rows = requests.map((request) => {
-    let documentModel = null;
-    try {
-      documentModel = createPaymentRequestDocumentModel(request);
-    } catch {
-      // Keep the request header visible with an explicit unavailable detail state.
-    }
-    const items = documentModel?.items || [];
-    const firstItem = items[0] || {};
-    const moreCount = Math.max(0, items.length - 1);
-    const summary = `${firstItem.itemName || "Item details unavailable"}${moreCount ? ` +${moreCount} more` : ""}`;
-    const itemDetails = documentModel ? `
-      <div class="payment-request-snapshot-table-wrap">
-        <table class="payment-request-snapshot-table">
-          <thead><tr><th>SKU</th><th>Item</th><th>Qty</th><th class="money-cell">Unit Price</th><th class="money-cell">Line Total</th></tr></thead>
-          <tbody>${items.map((item) => `
-            <tr class="payment-request-snapshot-item">
-              <td class="mono" data-label="SKU">${escapeText(item.sku || "Unavailable")}</td>
-              <td data-label="Item"><strong>${escapeText(item.itemName)}</strong></td>
-              <td data-label="Quantity">${item.quantity}</td>
-              <td class="money-cell" data-label="Unit Price">${formatMoney(item.unitPrice)}</td>
-              <td class="money-cell" data-label="Line Total"><strong>${formatMoney(item.lineTotal)}</strong></td>
-            </tr>
-          `).join("")}</tbody>
-        </table>
-      </div>
-    ` : `<p class="payment-request-detail-unavailable" role="status">Payment Request details are unavailable. Refresh and try again.</p>`;
-    const snapshotMeta = documentModel ? `
-      <dl class="payment-request-snapshot-meta">
-        <div><dt>Customer</dt><dd>${escapeText(documentModel.customerName)}</dd></div>
-        ${documentModel.customerContact ? `<div><dt>Contact</dt><dd>${escapeText(documentModel.customerContact)}</dd></div>` : ""}
-        <div><dt>Issue Date</dt><dd>${formatDate(documentModel.issuedAt)}</dd></div>
-        <div><dt>Status</dt><dd>${escapeText(documentModel.status)}</dd></div>
-        <div><dt>Payment</dt><dd>${escapeText(documentModel.paymentMethod || "GCash / GoTyme")}</dd></div>
-        <div><dt>Payment Accounts</dt><dd>${escapeText([documentModel.paymentConfig.gcashAccountName, documentModel.paymentConfig.gotymeAccountName].filter(Boolean).join(" / ") || "Unavailable")}</dd></div>
-        <div><dt>Shipping Method</dt><dd>${escapeText(documentModel.shippingMethod)}</dd></div>
-        <div><dt>Courier</dt><dd>${escapeText(displayCourier(documentModel.courier) || (documentModel.shippingMode === SHIPPING_MODES.PICKUP ? "Pickup" : "Unavailable"))}</dd></div>
-        <div class="full-span"><dt>Shipping Address</dt><dd>${escapeText(documentModel.shippingAddress || "Unavailable")}</dd></div>
-      </dl>
-    ` : "";
-    return `
-    <tr>
-      <td>
-        <strong>${escapeText(request.requestNumber)}</strong>
-        <small>${escapeText(summary)} &middot; ${items.length} item${items.length === 1 ? "" : "s"}</small>
-        <details class="payment-request-snapshot-details">
-          <summary>View details</summary>
-          ${snapshotMeta}
-          ${itemDetails}
-          ${documentModel ? `<dl class="payment-request-snapshot-totals">
-            <div><dt>Merchandise Subtotal</dt><dd>${formatMoney(documentModel.merchandiseSubtotal)}</dd></div>
-            <div><dt>Discount</dt><dd>${documentModel.discount ? `-${formatMoney(documentModel.discount)}` : formatMoney(0)}</dd></div>
-            <div><dt>Shipping</dt><dd>${documentModel.shippingMode === SHIPPING_MODES.TO_FOLLOW ? "To follow" : documentModel.shippingMode === SHIPPING_MODES.PICKUP ? "Pickup" : formatMoney(documentModel.shippingFee)}</dd></div>
-            <div><dt>Grand Total</dt><dd>${formatMoney(documentModel.grandTotal)}</dd></div>
-          </dl>` : ""}
-        </details>
-      </td>
-      <td>${escapeText(request.customerName)}</td>
-      <td class="money-cell">${formatMoney(request.totalAmount)}</td>
-      <td><span class="pill ${requestStatusClass(request.status)}">${request.status}</span></td>
-      <td>${formatDate(request.issuedAt || request.createdAt)}</td>
-      <td class="actions-cell request-actions">
-        <button class="table-action primary-action" type="button" data-download-image-request="${request.id}" aria-label="Share or save image for ${escapeText(request.requestNumber)}">Share / Save Image</button>
-        <button class="table-action" type="button" data-download-request="${request.id}" aria-label="Download PDF for ${escapeText(request.requestNumber)}">Download PDF</button>
-        ${request.status === "Pending" ? `
-          <button class="table-action primary-action" type="button" data-paid-request="${request.id}">Mark Paid</button>
-          <button class="table-action danger" type="button" data-cancel-request="${request.id}">Cancel</button>
-        ` : ""}
-      </td>
-    </tr>
-  `;
-  }).join("");
-
-  return `
-    <section class="panel payment-requests-panel">
-      <div class="section-heading">
-        <div>
-          <h2>Payment Requests</h2>
-          <p>${requests.length} saved request${requests.length === 1 ? "" : "s"}</p>
-        </div>
-        <button class="secondary-btn" type="button" data-open-payment-config>
-          ${isPaymentConfigurationComplete(store.paymentConfig) ? "Payment Details" : "Set Up Payment Details"}
-        </button>
-      </div>
-      ${requests.length ? `
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Request</th><th>Customer</th><th class="money-cell">Amount</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead>
-            <tbody>${rows}</tbody>
-          </table>
-        </div>
-      ` : emptyState("No payment requests yet", "Create one from an Available inventory item.")}
-    </section>
-  `;
-}
-
 function renderInventorySelectionSummary(store) {
   const selection = getInventorySelection(store);
   if (!selection.count) return "";
@@ -778,6 +638,24 @@ function renderInventorySelectionSummary(store) {
         <button class="primary-btn" type="button" data-create-selected-request>Create Payment Request</button>
       </div>
     </aside>
+  `;
+}
+
+function renderCreatedPaymentRequestBanner(store) {
+  if (!createdPaymentRequestId) return "";
+  const request = (store.paymentRequests || []).find((entry) => entry.id === createdPaymentRequestId);
+  if (!request) return "";
+  return `
+    <section class="panel inventory-payment-request-success" role="status">
+      <div>
+        <strong>${escapeText(request.requestNumber)} was created.</strong>
+        <span>Reserved items are now managed from Payment Requests.</span>
+      </div>
+      <div>
+        <button class="primary-btn" type="button" data-view-payment-request="${escapeText(request.id)}">View Payment Request</button>
+        <button class="secondary-btn" type="button" data-dismiss-created-request>Dismiss</button>
+      </div>
+    </section>
   `;
 }
 
@@ -931,7 +809,12 @@ export function renderInventoryPage(store) {
     ${pageHeader(
       "Inventory",
       `${inventory.length} total items`,
-      `<button class="primary-btn page-action" type="button" data-open-inventory="true">+ Add Item</button>`,
+      `<div class="page-action inventory-page-actions">
+        <button class="secondary-btn" type="button" data-open-payment-config>
+          ${isPaymentConfigurationComplete(store.paymentConfig) ? "Payment Details" : "Set Up Payment Details"}
+        </button>
+        <button class="primary-btn" type="button" data-open-inventory="true">+ Add Item</button>
+      </div>`,
     )}
 
     <div class="toolbar">
@@ -991,12 +874,11 @@ export function renderInventoryPage(store) {
 
     ${renderInventorySelectionSummary(store)}
 
-    ${renderPaymentRequests(store)}
+    ${renderCreatedPaymentRequestBanner(store)}
 
     ${isModalOpen ? inventoryForm(store) : ""}
     ${paymentRequestOpen ? paymentRequestForm(store) : ""}
     ${paymentConfigOpen ? paymentConfigForm(store) : ""}
-    ${paidRequestId ? paidRequestForm(store) : ""}
   `;
 }
 
@@ -1004,7 +886,6 @@ export function bindInventoryPage(root, store, notify, refresh) {
   const form = root.querySelector("#inventory-form");
   const paymentForm = root.querySelector("#payment-request-form");
   const configForm = root.querySelector("#payment-config-form");
-  const paidForm = root.querySelector("#payment-paid-form");
   const editingItem = store.inventory.find((item) => item.id === editingId);
   let updatePaymentRequestSummary = () => {};
 
@@ -1227,6 +1108,7 @@ export function bindInventoryPage(root, store, notify, refresh) {
           paymentConfig: store.paymentConfig,
           ...amounts,
         });
+        createdPaymentRequestId = result.request.id;
         clearInventorySelection();
         paymentRequestOpen = false;
         refresh();
@@ -1285,20 +1167,6 @@ export function bindInventoryPage(root, store, notify, refresh) {
         refresh();
       } catch (error) {
         notify(getSafeUserError(error, "save"), true);
-        return false;
-      }
-    });
-  }
-
-  if (paidForm) {
-    bindForm(paidForm, async (data) => {
-      try {
-        await markPaymentRequestPaid(paidRequestId, data.paymentMethod);
-        paidRequestId = null;
-        notify("Payment confirmed and sale recorded.");
-        refresh();
-      } catch (error) {
-        notify(getSafeUserError(error, "payment_request"), true);
         return false;
       }
     });
@@ -1370,19 +1238,11 @@ export function bindInventoryPage(root, store, notify, refresh) {
     refresh();
   };
 
-  root.addEventListener("keydown", (event) => {
-    const summary = event.target.closest(".payment-request-snapshot-details > summary");
-    if (!summary || !["Enter", " "].includes(event.key)) return;
-    event.preventDefault();
-    summary.parentElement.open = !summary.parentElement.open;
-  });
-
   root.onclick = async (event) => {
     const button = event.target.closest("button");
     if (!button) return;
     if (button.dataset.busy === "true") return;
     const originalButtonText = button.textContent;
-    const isDocumentAction = Boolean(button.dataset.downloadRequest || button.dataset.downloadImageRequest);
 
     try {
       if (button.dataset.openInventory) {
@@ -1423,6 +1283,20 @@ export function bindInventoryPage(root, store, notify, refresh) {
         if (!count) notify("Select at least one Available item to continue.", true);
       }
 
+      if (button.dataset.viewPaymentRequest) {
+        const requestId = button.dataset.viewPaymentRequest;
+        createdPaymentRequestId = null;
+        window.dispatchEvent(new CustomEvent("app:navigate", {
+          detail: { page: "payment-requests", paymentRequestId: requestId },
+        }));
+        return;
+      }
+
+      if (button.hasAttribute("data-dismiss-created-request")) {
+        createdPaymentRequestId = null;
+        refresh();
+      }
+
       if (button.hasAttribute("data-open-payment-config")) {
         paymentConfigOpen = true;
         refresh();
@@ -1437,57 +1311,6 @@ export function bindInventoryPage(root, store, notify, refresh) {
         paymentRequestOpen = false;
         paymentRequestLinePrices.clear();
         restorePaymentRequestFocus = true;
-        refresh();
-      }
-
-      if (button.dataset.downloadRequest) {
-        button.dataset.busy = "true";
-        button.disabled = true;
-        button.setAttribute("aria-busy", "true");
-        button.textContent = "Preparing PDF...";
-        const request = store.paymentRequests.find((entry) => entry.id === button.dataset.downloadRequest);
-        if (!request) throw new Error("Payment request not found.");
-        const bytes = await createPaymentRequestPdf(request, {
-          ...request.paymentConfig,
-          gotymeQrImage: store.paymentConfig.gotymeQrImage,
-        });
-        downloadPaymentRequestPdf(bytes, request.requestNumber);
-        notify("Payment Request PDF downloaded.");
-      }
-
-      if (button.dataset.downloadImageRequest) {
-        button.dataset.busy = "true";
-        button.disabled = true;
-        button.setAttribute("aria-busy", "true");
-        button.textContent = "Preparing Image...";
-        const request = store.paymentRequests.find((entry) => entry.id === button.dataset.downloadImageRequest);
-        if (!request) throw new Error("Payment request not found.");
-        const blob = await createPaymentRequestImage(request, {
-          ...request.paymentConfig,
-          gotymeQrImage: store.paymentConfig.gotymeQrImage,
-        });
-        const imageResult = await sharePaymentRequestImage(blob, request.requestNumber);
-        if (imageResult === "opened" || imageResult === "mobile-download") {
-          notify("Image created. Use your browser's Share or Save Image option.");
-        } else if (imageResult !== "cancelled") {
-          notify("Payment Request image ready.");
-        }
-      }
-
-      if (button.dataset.paidRequest) {
-        paidRequestId = button.dataset.paidRequest;
-        refresh();
-      }
-
-      if (button.hasAttribute("data-close-paid-request")) {
-        paidRequestId = null;
-        refresh();
-      }
-
-      if (button.dataset.cancelRequest) {
-        if (!confirm("Cancel this entire payment request and release all linked items?")) return;
-        await cancelPaymentRequest(button.dataset.cancelRequest);
-        notify("Payment Request cancelled. Linked items released.");
         refresh();
       }
 
@@ -1578,7 +1401,7 @@ export function bindInventoryPage(root, store, notify, refresh) {
         refresh();
       }
     } catch (error) {
-      notify(getSafeUserError(error, isDocumentAction ? "document" : "inventory"), true);
+      notify(getSafeUserError(error, "inventory"), true);
     } finally {
       if (button.dataset.busy === "true") {
         button.dataset.busy = "false";

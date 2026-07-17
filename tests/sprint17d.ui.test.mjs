@@ -8,10 +8,12 @@ import { getSafeUserError } from "../src/services/errorService.js";
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 let server;
 let inventoryPage;
+let paymentRequestsPage;
 
 before(async () => {
   server = await createServer({ root: ROOT, server: { middlewareMode: true }, appType: "custom", logLevel: "silent" });
   inventoryPage = await server.ssrLoadModule("/src/pages/inventory.js?sprint17d=ui");
+  paymentRequestsPage = await server.ssrLoadModule("/src/pages/paymentRequests.js?sprint17d=ui");
 });
 
 after(async () => {
@@ -133,8 +135,9 @@ test("Inventory desktop and mobile markup expose accessible selection without ch
   assert.match(html, /Create Payment Request/);
 });
 
-test("Payment Request review renders every selected item once and preserves header count", () => {
+test("Payment Request checkout and dedicated workspace render every item once without duplicating headers", () => {
   inventoryPage.resetInventoryPageState();
+  paymentRequestsPage.resetPaymentRequestsPageState();
   const savedRequest = requestWithItems(2);
   savedRequest.status = "Paid";
   const store = storeFor([item(1), item(2)], [savedRequest]);
@@ -143,19 +146,21 @@ test("Payment Request review renders every selected item once and preserves head
   assert.equal(inventoryPage.openInventoryPaymentRequest(store), true);
   const html = inventoryPage.renderInventoryPage(store);
   assert.equal((html.match(/data-request-item-row=/g) || []).length, 2);
-  assert.equal((html.match(/<strong>PR-CONTROLLED<\/strong>/g) || []).length, 1, "one request header must render once");
-  assert.match(html, /Product 1 \+1 more/);
-  assert.match(html, /2 items/);
   assert.match(html, /data-line-price="item-1"/);
   assert.match(html, /min="0.01"/);
   assert.match(html, /data-remove-selected-item="item-2"/);
   assert.match(html, /Merchandise Subtotal/);
-  assert.equal((html.match(/class="payment-request-snapshot-item"/g) || []).length, 2, "every snapshot item renders once");
-  assert.match(html, /View details/);
-  assert.match(html, /<th>Date<\/th>/);
-  assert.match(html, /Subtotal/);
-  assert.match(html, /Discount/);
-  assert.match(html, /Shipping/);
+  assert.doesNotMatch(html, /payment-request-list/, "Inventory must not render the saved request workspace");
+
+  const workspaceHtml = paymentRequestsPage.renderPaymentRequestsPage(store);
+  assert.equal((workspaceHtml.match(/<h2>PR-CONTROLLED<\/h2>/g) || []).length, 1, "one request header must render once");
+  assert.match(workspaceHtml, /Product 1 \+1 more/);
+  assert.match(workspaceHtml, /2 items/);
+  assert.equal((workspaceHtml.match(/class="payment-request-snapshot-item"/g) || []).length, 2, "every snapshot item renders once");
+  assert.match(workspaceHtml, /View Details/);
+  assert.match(workspaceHtml, /Merchandise Subtotal/);
+  assert.match(workspaceHtml, /Discount/);
+  assert.match(workspaceHtml, /Shipping/);
 });
 
 test("Multi-item totals and safe price validation remain deterministic", () => {

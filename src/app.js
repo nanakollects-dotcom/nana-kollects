@@ -13,6 +13,12 @@ import {
   setInventoryCollectionFilter,
   setInventoryViewItem,
 } from "./pages/inventory.js";
+import {
+  bindPaymentRequestsPage,
+  renderPaymentRequestsPage,
+  resetPaymentRequestsPageState,
+  setPaymentRequestFocus,
+} from "./pages/paymentRequests.js";
 import { renderCapitalPage, bindCapitalPage, resetCapitalPageState } from "./pages/capital.js";
 import { renderSalesPage, bindSalesPage, resetSalesPageState } from "./pages/sales.js";
 import { renderOrdersPage, bindOrdersPage, resetOrdersPageState } from "./pages/orders.js";
@@ -23,6 +29,7 @@ const pages = [
   { id: "dashboard", label: "Dashboard", icon: "dashboard", render: renderDashboardPage, bind: bindDashboardPage },
   { id: "collections", label: "Collections", icon: "collections", render: renderCollectionsPage, bind: bindCollectionsPage },
   { id: "inventory", label: "Inventory", icon: "inventory", render: renderInventoryPage, bind: bindInventoryPage },
+  { id: "payment-requests", label: "Payment Requests", icon: "payment-requests", render: renderPaymentRequestsPage, bind: bindPaymentRequestsPage },
   { id: "sales", label: "Sales", icon: "sales", render: renderSalesPage, bind: bindSalesPage },
   { id: "orders", label: "Orders", icon: "orders", render: renderOrdersPage, bind: bindOrdersPage },
   { id: "expenses", label: "Expenses", icon: "expenses", render: renderExpensesPage, bind: bindExpensesPage },
@@ -52,7 +59,12 @@ const toast = document.querySelector("#toast");
 const menuToggle = document.querySelector("#menu-toggle");
 const navOverlay = document.querySelector("#nav-overlay");
 
-let activePage = "dashboard";
+function pageFromHash() {
+  const pageId = window.location.hash.replace(/^#/, "");
+  return pages.some((page) => page.id === pageId) ? pageId : "dashboard";
+}
+
+let activePage = pageFromHash();
 let pendingOpen = "";
 let customDateRange = {
   startDate: "",
@@ -102,6 +114,7 @@ function navIcon(name) {
     dashboard: `<path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/>`,
     collections: `<path d="M12 3 4 7l8 4 8-4-8-4z"/><path d="M4 12l8 4 8-4"/><path d="M4 17l8 4 8-4"/>`,
     inventory: `<path d="M5 7h14v13H5z"/><path d="M8 7V5h8v2"/><path d="M9 11h6"/>`,
+    "payment-requests": `<path d="M6 3h12v18H6z"/><path d="M9 7h6M9 11h6M9 15h4"/><path d="M15 18h3"/>`,
     sales: `<text x="12" y="18" text-anchor="middle" font-size="20" font-weight="500" fill="none" stroke="currentColor" stroke-width="1.4">₱</text>`,
     orders: `<path d="M7 4h10l2 4v12H5V8z"/><path d="M5 8h14M9 12h6M9 16h4"/>`,
     expenses: `<path d="M7 4h10v16H7z"/><path d="M9 8h6M9 12h6M9 16h3"/>`,
@@ -115,7 +128,7 @@ function renderNav() {
   nav.innerHTML = pages
     .map(
       (page) => `
-        <button class="nav-item ${page.id === activePage ? "active" : ""}" data-page="${page.id}">
+        <button class="nav-item ${page.id === activePage ? "active" : ""}" type="button" data-page="${page.id}" ${page.id === activePage ? 'aria-current="page"' : ""}>
           <span class="nav-icon">${navIcon(page.icon)}</span>
           <span>${page.label}</span>
         </button>
@@ -126,6 +139,18 @@ function renderNav() {
 
 function closeMobileNav() {
   document.body.classList.remove("nav-open");
+}
+
+function navigateToPage(pageId) {
+  const nextPage = pages.some((page) => page.id === pageId) ? pageId : "dashboard";
+  activePage = nextPage;
+  closeMobileNav();
+  const nextHash = `#${nextPage}`;
+  if (window.location.hash !== nextHash) {
+    window.location.hash = nextPage;
+    return;
+  }
+  refresh();
 }
 
 function refresh() {
@@ -160,6 +185,7 @@ function refresh() {
   }
 
   main.onclick = null;
+  main.onkeydown = null;
 
   if (page.bind) {
     page.bind(main, store, notify, refresh);
@@ -176,6 +202,7 @@ function showApp() {
   authScreen.hidden = true;
   appShellWrapper.hidden = false;
   document.body.classList.add("is-authenticated");
+  activePage = pageFromHash();
   refresh();
 }
 
@@ -191,6 +218,7 @@ function resetAuthenticatedUiState({ focus = true } = {}) {
   resetDashboardPageState();
   resetCollectionsPageState();
   resetInventoryPageState();
+  resetPaymentRequestsPageState();
   resetSalesPageState();
   resetOrdersPageState();
   resetExpensesPageState();
@@ -211,6 +239,7 @@ function resetAuthenticatedUiState({ focus = true } = {}) {
   view.replaceChildren();
   pageActionSlot.replaceChildren();
   main.onclick = null;
+  main.onkeydown = null;
   if (toastTimer) clearTimeout(toastTimer);
   toastTimer = null;
   toast.textContent = "";
@@ -325,9 +354,7 @@ nav.addEventListener("click", (event) => {
   const button = event.target.closest("[data-page]");
   if (!button) return;
 
-  activePage = button.dataset.page;
-  closeMobileNav();
-  refresh();
+  navigateToPage(button.dataset.page);
 });
 
 timeFilter.addEventListener("change", () => {
@@ -368,22 +395,29 @@ window.addEventListener("store:changed", () => {
 
 window.addEventListener("inventory:filter-collection", (event) => {
   setInventoryCollectionFilter(event.detail);
-  activePage = "inventory";
-  closeMobileNav();
-  refresh();
+  navigateToPage("inventory");
 });
 
 window.addEventListener("app:navigate", (event) => {
-  activePage = event.detail?.page || activePage;
+  const nextPage = event.detail?.page || activePage;
 
   if (event.detail?.viewItem) {
     setInventoryViewItem(event.detail.viewItem);
   }
 
+  if (event.detail?.paymentRequestId) {
+    setPaymentRequestFocus(event.detail.paymentRequestId);
+  }
+
   pendingOpen = event.detail?.open || "";
 
+  navigateToPage(nextPage);
+});
+
+window.addEventListener("hashchange", () => {
+  activePage = pageFromHash();
   closeMobileNav();
-  refresh();
+  if (!appShellWrapper.hidden) refresh();
 });
 
 menuToggle.addEventListener("click", () => {

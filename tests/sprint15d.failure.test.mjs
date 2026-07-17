@@ -341,7 +341,7 @@ test("malformed and hostile errors never throw or expose private values", async 
 
 test("all pages, populated workspaces, and empty states render", async () => {
   const emptyStore = { inventory: [], sales: [], expenses: [], capital: [], purchases: [], logs: [], collections: [], paymentRequests: [], orders: [], orderItems: [], orderEvents: [], paymentConfig: {}, meta: {} };
-  const pages = [["dashboard", "renderDashboardPage"], ["collections", "renderCollectionsPage"], ["inventory", "renderInventoryPage"], ["sales", "renderSalesPage"], ["orders", "renderOrdersPage"], ["expenses", "renderExpensesPage"], ["capital", "renderCapitalPage"]];
+  const pages = [["dashboard", "renderDashboardPage"], ["collections", "renderCollectionsPage"], ["inventory", "renderInventoryPage"], ["paymentRequests", "renderPaymentRequestsPage"], ["sales", "renderSalesPage"], ["orders", "renderOrdersPage"], ["expenses", "renderExpensesPage"], ["capital", "renderCapitalPage"]];
   for (const [name, renderer] of pages) {
     const page = await server.ssrLoadModule(`/src/pages/${name}.js?sprint15d=smoke`);
     const html = page[renderer](emptyStore, { startDate: "", endDate: "" });
